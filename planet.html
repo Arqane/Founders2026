@@ -1,0 +1,295 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Planet Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, Arial; margin: 24px; }
+    .top { display:flex; gap:14px; flex-wrap:wrap; align-items:center; }
+    .pill { padding:6px 10px; border:1px solid #ddd; border-radius:999px; font-size:13px; text-decoration:none; color:inherit; }
+    select, input { padding:10px; border-radius:10px; border:1px solid #ccc; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 16px;}
+    .card { border:1px solid #ddd; border-radius:14px; padding:14px; }
+    .card h3 { margin:0 0 10px 0; font-size:16px;}
+    ol { margin:0; padding-left: 18px; }
+    table { border-collapse: collapse; width:100%; margin-top: 14px; }
+    th, td { border-bottom: 1px solid #eee; padding: 10px; text-align:left; }
+    th { cursor:pointer; position:sticky; top:0; background:#fff; }
+    .muted { color:#666; font-size: 13px; }
+    .row { display:flex; gap:14px; flex-wrap:wrap; align-items:end; margin-top:14px; }
+    .row label { display:flex; flex-direction:column; gap:6px; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <h1 id="title" style="margin:0;">Planet</h1>
+    <span class="pill" id="updated">Updated: —</span>
+    <a class="pill" href="index.html">← All planets</a>
+  </div>
+
+  <div class="row">
+    <label>
+      Year
+      <select id="yearSelect"></select>
+    </label>
+
+    <label>
+      Rankings indicator
+      <select id="indicatorSelect"></select>
+    </label>
+
+    <label style="flex:1; min-width:240px;">
+      Search country
+      <input id="search" placeholder="Type to filter table…" />
+    </label>
+  </div>
+
+  <div class="grid" id="rankingCards"></div>
+
+  <h2 style="margin-top:24px;">All Countries (sortable)</h2>
+  <div class="muted">Click a column header to sort. Search filters by Country.</div>
+  <table id="dataTable">
+    <thead><tr id="theadRow"></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+<script>
+  // =========================
+  // CONFIG
+  // =========================
+
+  // Your Apps Script Web App URL (must end with /exec)
+  const API_BASE = "https://script.google.com/macros/s/AKfycbzX861zL2l3qGCnnXq0fDp_OT8QC9hRHcGri5S89KW_zY5vQrmKphTsbmzONPu6IgZ2/exec";
+
+  // Exact header names from your sheet
+  const COL = {
+    country:       "Country",
+    population:    "Total population",
+    unemployment:  "Total unemployment rate",
+    inflation:     "Inflation rate",
+    nominalGDP:    "Nominal GDP",
+    gdpPerCapita:  "rGDP per Capita",          // your "GDP per Capita" field
+    rgdpGrowth:    "rGDP Growth Rate",
+    govSpend:      "Government Spending (Real)",
+    mps:           "Military Power Score"
+  };
+
+  // Ranking direction: true = high-to-low, false = low-to-high
+  const RANK_ORDER = {
+    [COL.population]:   true,
+    [COL.unemployment]: false,
+    [COL.inflation]:    false,
+    [COL.nominalGDP]:   true,
+    [COL.gdpPerCapita]: true,
+    [COL.rgdpGrowth]:   true,
+    [COL.govSpend]:     true,
+    [COL.mps]:          true
+  };
+
+  // Human-friendly labels for the dropdown
+  const INDICATORS = [
+    { label: "Population",                 key: COL.population },
+    { label: "Total Unemployment Rate",    key: COL.unemployment },
+    { label: "Inflation Rate",             key: COL.inflation },
+    { label: "Nominal GDP",                key: COL.nominalGDP },
+    { label: "GDP per Capita (rGDP pc)",   key: COL.gdpPerCapita },
+    { label: "rGDP Growth Rate",           key: COL.rgdpGrowth },
+    { label: "Government Spending (Real)", key: COL.govSpend },
+    { label: "Military Power Score",       key: COL.mps }
+  ];
+
+  // =========================
+  // HELPERS
+  // =========================
+  function qs(name) {
+    return new URLSearchParams(location.search).get(name) || "";
+  }
+
+  function prettyPlanetKey(key) {
+    // Optional: display nicer planet names without changing API keys
+    const map = {
+      parallax: "Parallax (2nd)",
+      cyqs: "Cyq's (6th)",
+      sevyr: "Sevyr (7th)",
+      octic: "Octic (8th)"
+    };
+    return map[String(key || "").toLowerCase()] || key || "Planet";
+  }
+
+  function toNumber(x) {
+    if (x == null) return NaN;
+    const s = String(x).trim();
+    if (!s) return NaN;
+    // remove commas, percent signs, currency symbols
+    const cleaned = s.replace(/[$,%]/g, "").replace(/,/g, "").trim();
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : NaN;
+  }
+
+  function rankList(rows, field, highToLow, topN = 10) {
+    const scored = rows
+      .map(r => ({
+        name: String(r[COL.country] ?? "").trim(),
+        raw: r[field],
+        val: toNumber(r[field])
+      }))
+      .filter(x => x.name && Number.isFinite(x.val));
+
+    scored.sort((a, b) => highToLow ? (b.val - a.val) : (a.val - b.val));
+    return scored.slice(0, topN);
+  }
+
+  function renderRankingCards(rows) {
+    const wrap = document.getElementById("rankingCards");
+    wrap.innerHTML = "";
+
+    const field = document.getElementById("indicatorSelect").value;
+    const highToLow = !!RANK_ORDER[field];
+
+    const top = rankList(rows, field, highToLow, 10);
+    const bottom = rankList(rows, field, !highToLow, 10);
+
+    const mkCard = (title, list) => {
+      const div = document.createElement("div");
+      div.className = "card";
+      div.innerHTML =
+        `<h3>${title}</h3>` +
+        (list.length
+          ? `<ol>${list.map(x => `<li><b>${x.name}</b> — ${x.raw}</li>`).join("")}</ol>`
+          : `<div class="muted">No numeric data found for this indicator.</div>`);
+      return div;
+    };
+
+    wrap.appendChild(mkCard(highToLow ? "Top 10" : "Lowest 10", top));
+    wrap.appendChild(mkCard(highToLow ? "Bottom 10" : "Highest 10", bottom));
+  }
+
+  function renderTable(headers, rows) {
+    const theadRow = document.getElementById("theadRow");
+    const tbody = document.getElementById("tbody");
+    theadRow.innerHTML = "";
+    tbody.innerHTML = "";
+
+    // sorting state
+    let sortKey = null;
+    let sortAsc = true;
+
+    function draw(list) {
+      tbody.innerHTML = "";
+      list.forEach(r => {
+        const tr = document.createElement("tr");
+        headers.forEach(h => {
+          const td = document.createElement("td");
+          td.textContent = r[h] ?? "";
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+    }
+
+    headers.forEach(h => {
+      const th = document.createElement("th");
+      th.textContent = h;
+      th.addEventListener("click", () => {
+        if (sortKey === h) sortAsc = !sortAsc;
+        else { sortKey = h; sortAsc = true; }
+
+        const copy = [...currentFiltered];
+        copy.sort((a, b) => {
+          const an = toNumber(a[h]);
+          const bn = toNumber(b[h]);
+          const aNum = Number.isFinite(an);
+          const bNum = Number.isFinite(bn);
+
+          if (aNum && bNum) return sortAsc ? (an - bn) : (bn - an);
+
+          const as = String(a[h] ?? "");
+          const bs = String(b[h] ?? "");
+          return sortAsc ? as.localeCompare(bs) : bs.localeCompare(as);
+        });
+
+        currentFiltered = copy;
+        draw(currentFiltered);
+      });
+      theadRow.appendChild(th);
+    });
+
+    // search filter
+    let currentFiltered = [...rows];
+    const search = document.getElementById("search");
+    search.addEventListener("input", () => {
+      const q = search.value.trim().toLowerCase();
+      currentFiltered = q
+        ? rows.filter(r => String(r[COL.country] ?? "").toLowerCase().includes(q))
+        : [...rows];
+      draw(currentFiltered);
+    });
+
+    draw(currentFiltered);
+  }
+
+  async function fetchData(planet, year) {
+    const url = `${API_BASE}?planet=${encodeURIComponent(planet)}&year=${encodeURIComponent(year)}`;
+    const res = await fetch(url);
+    return res.json();
+  }
+
+  // =========================
+  // MAIN
+  // =========================
+  async function main() {
+    const planet = qs("planet"); // parallax / cyqs / sevyr / octic
+    document.getElementById("title").textContent = `Planet: ${prettyPlanetKey(planet)}`;
+
+    // year dropdown
+    const yearSelect = document.getElementById("yearSelect");
+    for (let y = 1; y <= 6; y++) {
+      const opt = document.createElement("option");
+      opt.value = String(y);
+      opt.textContent = `Year ${y}`;
+      yearSelect.appendChild(opt);
+    }
+    yearSelect.value = qs("year") || "6";
+
+    // indicator dropdown
+    const indicatorSelect = document.getElementById("indicatorSelect");
+    INDICATORS.forEach(ind => {
+      const opt = document.createElement("option");
+      opt.value = ind.key;
+      opt.textContent = ind.label;
+      indicatorSelect.appendChild(opt);
+    });
+    indicatorSelect.value = COL.nominalGDP;
+
+    let lastRows = [];
+
+    async function loadAndRender() {
+      const year = yearSelect.value;
+      const data = await fetchData(planet, year);
+
+      if (data.error) {
+        document.body.innerHTML = `<h1>Error</h1><p>${data.error}</p>`;
+        return;
+      }
+
+      document.getElementById("updated").textContent = "Updated: " + (data.updatedAt || "—");
+
+      const headers = data.headers || [];
+      const rows = data.rows || [];
+      lastRows = rows;
+
+      renderRankingCards(rows);
+      renderTable(headers, rows);
+    }
+
+    yearSelect.addEventListener("change", loadAndRender);
+    indicatorSelect.addEventListener("change", () => renderRankingCards(lastRows));
+
+    await loadAndRender();
+  }
+
+  main();
+</script>
+</body>
+</html>
