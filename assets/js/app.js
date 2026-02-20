@@ -3,6 +3,8 @@ import { PLANETS } from "./config.js";
 const nav = document.getElementById("nav");
 const app = document.getElementById("app");
 
+const DEFAULT_PLANET_ID = "test";
+
 function setNav() {
   nav.innerHTML = `
     <a href="#/">Home</a>
@@ -25,17 +27,25 @@ function findPlanet(planetIdOrLabel) {
   return PLANETS.find(p => p.id === key) || PLANETS.find(p => p.label.toLowerCase() === key) || null;
 }
 
+function getDefaultPlanet() {
+  return PLANETS.find(p => p.id === DEFAULT_PLANET_ID) || PLANETS[0] || null;
+}
+
 /* ---------- Views ---------- */
 
 function viewHome() {
+  const def = getDefaultPlanet();
   return `
     <section class="card">
       <h2>Welcome</h2>
       <p>This site will display the diplomacy matrix and (soon) country profiles pulled from each planet’s Data Log.</p>
+      <p class="small">
+        Current integration target: <span class="badge">${def ? def.label : "None"}</span>
+      </p>
       <p>
         Start here:
-        <a class="inline" href="#/diplomacy">Diplomacy</a> or
-        <a class="inline" href="#/planets">Planets</a>.
+        <a class="inline" href="#/diplomacy?planet=${encodeURIComponent(def?.id || "")}">Diplomacy (TEST)</a> or
+        <a class="inline" href="#/planet?planet=${encodeURIComponent(def?.id || "")}">Planet Hub (TEST)</a>.
       </p>
     </section>
   `;
@@ -49,7 +59,7 @@ function viewPlanets() {
   return `
     <section class="card">
       <h2>Planets</h2>
-      <p>Select a planet hub. From there we’ll jump into diplomacy and eventually country profiles.</p>
+      <p>Select a planet hub. We’ll integrate TEST first, then roll it out to the real planets.</p>
       <div class="buttonRow">${buttons}</div>
     </section>
   `;
@@ -77,7 +87,12 @@ function viewPlanetHub(planet) {
       <ul>
         ${countryLinks}
       </ul>
-      <p class="small">Next: replace this placeholder list with live countries from the Data Log collector sheet for ${planet.label}.</p>
+      <p class="small">
+        ${planet.id === "test"
+          ? "TEST is where we will wire live data first."
+          : "Next: replace this placeholder list with live countries from the Data Log collector sheet for this planet."
+        }
+      </p>
     </section>
   `;
 }
@@ -89,7 +104,7 @@ function viewDiplomacy(planet) {
   let html = `
     <section class="card">
       <h2>Diplomacy</h2>
-      <p class="small">Planet: <span class="badge">${planet ? planet.label : "All / Not selected"}</span> (placeholder)</p>
+      <p class="small">Planet: <span class="badge">${planet ? planet.label : "Unknown"}</span> (placeholder)</p>
       <p class="small">Next: replace “Neutral” with the real relationship values from your diplomacy collector endpoint.</p>
     </section>
     <section class="card">
@@ -171,7 +186,7 @@ function render() {
 
   if (path === "/diplomacy") {
     const planetParam = params.get("planet");
-    const planet = findPlanet(planetParam);
+    const planet = findPlanet(planetParam) || getDefaultPlanet();
     app.innerHTML = viewDiplomacy(planet);
     return;
   }
@@ -179,7 +194,7 @@ function render() {
   if (path === "/country") {
     const planetParam = params.get("planet");
     const country = params.get("country");
-    const planet = findPlanet(planetParam);
+    const planet = findPlanet(planetParam) || getDefaultPlanet();
     app.innerHTML = viewCountryProfile(planet, country);
     return;
   }
