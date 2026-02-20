@@ -3,6 +3,12 @@ import { PLANETS, RELATIONSHIP_STYLES } from "./config.js";
 const nav = document.getElementById("nav");
 const app = document.getElementById("app");
 
+// If these don’t exist, render can’t work.
+if (!nav || !app) {
+  // eslint-disable-next-line no-console
+  console.error("Missing #nav or #app element in index.html");
+}
+
 const planetDataCache = new Map();
 
 function parseRoute() {
@@ -34,66 +40,14 @@ function setNav(planet = null) {
   `;
 }
 
-/* ---------- Load data ---------- */
+/* ---------- Helpers ---------- */
 
-async function ensurePlanetLoaded(planet) {
-  if (!planet) return null;
-
-  if (planetDataCache.has(planet.id)) return planetDataCache.get(planet.id);
-
-  if (!planet.dataFile) {
-    const empty = { countries: [] };
-    planetDataCache.set(planet.id, empty);
-    return empty;
-  }
-
-  const res = await fetch(planet.dataFile, { cache: "no-store" });
-  if (!res.ok) throw new Error(`Failed to load ${planet.dataFile}: ${res.status}`);
-  const json = await res.json();
-
-  // Prefer flagPublicUrl if present (your new Column H output)
-  json.countries = (json.countries || []).map(c => {
-    const rawFlag =
-      c.flagPublicUrl ||
-      c.flagUrl ||
-      c.flag ||
-      c.flagLink ||
-      "";
-
-    return {
-      ...c,
-      flagUrl: normalizeDriveImageUrl(rawFlag),
-    };
-  });
-
-  planetDataCache.set(planet.id, json);
-  return json;
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
-
-function normalizeDriveImageUrl(url) {
-  if (!url) return url;
-  const s = String(url).trim();
-
-  let id = null;
-
-  let m = s.match(/drive\.google\.com\/file\/d\/([^/]+)\//i);
-  if (m?.[1]) id = m[1];
-
-  if (!id) {
-    m = s.match(/[?&]id=([^&]+)/i);
-    if (m?.[1]) id = m[1];
-  }
-
-  if (!id && /drive\.google\.com\/drive\/folders\//i.test(s)) return s;
-
-  if (!id && /^[a-zA-Z0-9_-]{20,}$/.test(s)) id = s;
-
-  if (!id) return s;
-
-  return `https://drive.google.com/uc?export=view&id=${id}`;
-}
-
-/* ---------- Formatting helpers ---------- */
 
 function fmtBillion(n) {
   if (n === null || n === undefined || n === "") return "—";
@@ -113,21 +67,15 @@ function fmtSignedBillion(n) {
   const sign = val > 0 ? "+" : (val < 0 ? "−" : "");
   return `${sign}${Math.abs(val).toLocaleString(undefined, { maximumFractionDigits: 0 })} B`;
 }
-function escapeHtml(s) {
-  return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-/* ---------- Data helpers ---------- */
 
 function planetCountries(planetData) {
   return Array.isArray(planetData?.countries) ? planetData.countries : [];
 }
+
 function countryById(planetData, id) {
   return planetCountries(planetData).find(c => c.id === id) || null;
 }
+
 function buildRankings(planetData, key, direction = "desc") {
   const rows = planetCountries(planetData)
     .map(c => ({ id: c.id, name: c.name, value: c.indicators?.[key] }))
@@ -135,14 +83,86 @@ function buildRankings(planetData, key, direction = "desc") {
 
   rows.sort((a, b) => {
     const av = Number(a.value), bv = Number(b.value);
-    if (direction === "asc") return av - bv;
-    return bv - av;
+    return direction === "asc" ? (av - bv) : (bv - av);
   });
 
   return rows;
 }
 
+/* ---------- Drive flag URL handling ---------- */
+
+function normalizeDriveImageUrl(url) {
+  if (!url) return url;
+  const s = String(url).trim();
+
+  let id = null;
+
+  // file/d/<ID>/...
+  let m = s.match(/drive\.google\.com\/file\/d\/([^/]+)\//i);
+  if (m?.[1]) id = m[1];
+
+  // ?id=<ID>
+  if (!id) {
+    m = s.match(/[?&]id=([^&]+)/i);
+    if (m?.[1]) id = m[1];
+  }
+
+  // Folder links won’t render in <img>
+  if (!id && /drive\.google\.com\/drive\/folders\//i.test(s)) return s;
+
+  // Raw ID fallback
+  if (!id && /^[a-zA-Z0-9_-]{20,}$/.test(s)) id = s;
+
+  if (!id) return s;
+
+  return `https://drive.google.com/uc?export=view&id=${id}`;
+}
+
+/* ---------- Load data ---------- */
+
+async function ensurePlanetLoaded(planet) {
+  if (!planet) return { countries: [] };
+
+  if (planetDataCache.has(planet.id)) return planetDataCache.get(planet.id);
+
+  if (!planet.dataFile) {
+    const empty = { countries: [] };
+    planetDataCache.set(planet.id, empty);
+    return empty;
+  }
+
+  const res = await fetch(planet.dataFile, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Failed to load ${planet.dataFile}: ${res.status}`);
+
+  const json = await res.json();
+
+  // Prefer flagPublicUrl (your Column H export) if present
+  json.countries = (json.countries || []).map(c => {
+    const rawFlag =
+      c.flagPublicUrl ||
+      c.flagUrl ||
+      c.flag ||
+      c.flagLink ||
+      "";
+
+    return {
+      ...c,
+      flagUrl: normalizeDriveImageUrl(rawFlag),
+    };
+  });
+
+  planetDataCache.set(planet.id, json);
+  return json;
+}
+
 /* ---------- Diplomacy web (SVG) ---------- */
+
+function legendHtml() {
+  const items = Object.entries(RELATIONSHIP_STYLES).map(([, v]) =>
+    `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
+  ).join("");
+  return `<div class="graphLegend">${items}</div>`;
+}
 
 function diplomacyWebSvg(planetData) {
   const countries = planetCountries(planetData);
@@ -203,14 +223,22 @@ function diplomacyWebSvg(planetData) {
   `;
 }
 
-function legendHtml() {
-  const items = Object.entries(RELATIONSHIP_STYLES).map(([, v]) =>
-    `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
-  ).join("");
-  return `<div class="graphLegend">${items}</div>`;
-}
-
 /* ---------- Pie chart (quantity > 0, legend names only, tooltip quantity) ---------- */
+
+function arcPath(cx, cy, r, startAngle, endAngle) {
+  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
+  const x1 = cx + r * Math.cos(startAngle);
+  const y1 = cy + r * Math.sin(startAngle);
+  const x2 = cx + r * Math.cos(endAngle);
+  const y2 = cy + r * Math.sin(endAngle);
+
+  return [
+    `M ${cx} ${cy}`,
+    `L ${x1.toFixed(3)} ${y1.toFixed(3)}`,
+    `A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(3)} ${y2.toFixed(3)}`,
+    "Z"
+  ].join(" ");
+}
 
 function resourcePieChartHtml(country) {
   const resList = Array.isArray(country?.resources) ? country.resources : [];
@@ -262,21 +290,6 @@ function resourcePieChartHtml(country) {
   `;
 }
 
-function arcPath(cx, cy, r, startAngle, endAngle) {
-  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
-  const x1 = cx + r * Math.cos(startAngle);
-  const y1 = cy + r * Math.sin(startAngle);
-  const x2 = cx + r * Math.cos(endAngle);
-  const y2 = cy + r * Math.sin(endAngle);
-
-  return [
-    `M ${cx} ${cy}`,
-    `L ${x1.toFixed(3)} ${y1.toFixed(3)}`,
-    `A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(3)} ${y2.toFixed(3)}`,
-    "Z"
-  ].join(" ");
-}
-
 function attachPieTooltipHandlers() {
   const wrap = document.getElementById("pieWrap");
   const svg = document.getElementById("pieSvg");
@@ -317,7 +330,7 @@ function viewChoosePlanet() {
   return `
     <section class="card">
       <h2 class="heroTitle">Choose a Planet</h2>
-      <p class="small">TEST is loaded from JSON. After copying flags to Column H, regenerate JSON to use the new public URLs.</p>
+      <p class="small">If this page is blank, open DevTools → Console for an error.</p>
       <div class="buttonRow">${buttons}</div>
     </section>
   `;
@@ -399,10 +412,6 @@ function viewPlanet(planet, planetData) {
   `;
 }
 
-function planetCountries(planetData) {
-  return Array.isArray(planetData?.countries) ? planetData.countries : [];
-}
-
 function diplomacyTableRows(planetData, country) {
   const rels = country.diplomacy || {};
   const rows = Object.entries(rels).map(([targetId, meta]) => {
@@ -440,10 +449,11 @@ function viewCountry(planet, planetData, country) {
     .map(r => {
       const qty = (r.quantity !== null && r.quantity !== undefined) ? Number(r.quantity) : null;
       const qtyCell = (qty !== null && !Number.isNaN(qty)) ? qty.toLocaleString() : "—";
+      const shareCell = (r.share !== null && r.share !== undefined && r.share !== "") ? `${Number(r.share).toFixed(1)}%` : "—";
       return `<tr>
         <td>${escapeHtml(r.name)}</td>
-        <td>${escapeHtml(r.type)}</td>
-        <td class="num">${(Number(r.share) || 0).toFixed(1)}%</td>
+        <td>${escapeHtml(r.type || "Resource")}</td>
+        <td class="num">${shareCell}</td>
         <td class="num">${qtyCell}</td>
       </tr>`;
     })
@@ -459,8 +469,7 @@ function viewCountry(planet, planetData, country) {
                onerror="this.style.display='none'; document.getElementById('flagError').style.display='block';" />
           <div>
             <h2 class="heroTitle" style="margin-bottom:4px;">${escapeHtml(country.name)}</h2>
-            <div class="small"><span class="badge">${planet.label}</span> • Demonym: <strong>${escapeHtml(country.demonym || "—")}</strong></div>
-            <div class="small">Motto: <em>${escapeHtml(country.motto || "—")}</em></div>
+            <div class="small"><span class="badge">${planet.label}</span></div>
           </div>
         </div>
         <div class="buttonRow">
@@ -469,10 +478,7 @@ function viewCountry(planet, planetData, country) {
       </div>
 
       <div id="flagError" style="display:none; margin-top:10px;">
-        <p class="small">
-          <strong>Flag didn’t load.</strong> Once your Column H has the copied public URL,
-          regenerate your JSON to include <code>flagPublicUrl</code> and the site will use it automatically.
-        </p>
+        <p class="small"><strong>Flag didn’t load.</strong> This will be fixed once your JSON includes the copied public link (Column H) as <code>flagPublicUrl</code>.</p>
       </div>
     </section>
 
@@ -502,7 +508,6 @@ function viewCountry(planet, planetData, country) {
           </table>
         </div>
       </div>
-      <p class="small">Pie chart includes only resources with quantity above 0. Hover slices to see quantities.</p>
     </section>
 
     <section class="card">
@@ -519,6 +524,8 @@ function viewCountry(planet, planetData, country) {
 
 async function render() {
   const { path, params } = parseRoute();
+
+  if (!nav || !app) return;
 
   if (path === "/" || path === "") {
     setNav(null);
@@ -554,20 +561,24 @@ async function render() {
     return;
   }
 
+  // fallback
   setNav(null);
   app.innerHTML = viewChoosePlanet();
 }
 
-window.addEventListener("hashchange", () => { render().catch(err => showError(err)); });
-render().catch(err => showError(err));
-
 function showError(err) {
+  // eslint-disable-next-line no-console
   console.error(err);
+  if (!app) return;
   app.innerHTML = `
     <section class="card">
-      <h2>Load error</h2>
+      <h2>Site error</h2>
       <p class="small">${escapeHtml(err?.message || String(err))}</p>
+      <p class="small">Open DevTools → Console for the stack trace.</p>
       <p><a class="inline" href="#/">Back to Choose Planet</a></p>
     </section>
   `;
 }
+
+window.addEventListener("hashchange", () => { render().catch(showError); });
+render().catch(showError);
