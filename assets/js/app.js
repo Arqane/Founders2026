@@ -1,17 +1,7 @@
-import { PLANETS } from "./config.js";
+import { PLANETS, RELATIONSHIP_STYLES } from "./config.js";
 
 const nav = document.getElementById("nav");
 const app = document.getElementById("app");
-
-const DEFAULT_PLANET_ID = "test";
-
-function setNav() {
-  nav.innerHTML = `
-    <a href="#/">Home</a>
-    <a href="#/diplomacy">Diplomacy</a>
-    <a href="#/planets">Planets</a>
-  `;
-}
 
 function parseRoute() {
   const hash = window.location.hash || "#/";
@@ -28,134 +18,324 @@ function findPlanet(planetIdOrLabel) {
 }
 
 function getDefaultPlanet() {
-  return PLANETS.find(p => p.id === DEFAULT_PLANET_ID) || PLANETS[0] || null;
+  return PLANETS.find(p => p.id === "test") || PLANETS[0] || null;
+}
+
+function setNav(planet = null) {
+  // Navigation begins with planet choice (per your spec)
+  const planetCrumb = planet
+    ? `<a href="#/planet?planet=${encodeURIComponent(planet.id)}">${planet.label}</a>`
+    : "";
+
+  nav.innerHTML = `
+    <a href="#/">Choose Planet</a>
+    ${planetCrumb}
+  `;
+}
+
+/* ---------- Formatting helpers ---------- */
+
+function fmtBillion(n) {
+  if (n === null || n === undefined || n === "") return "—";
+  return `${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })} B`;
+}
+function fmtDollars(n) {
+  if (n === null || n === undefined || n === "") return "—";
+  return `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+function fmtPct(n) {
+  if (n === null || n === undefined || n === "") return "—";
+  return `${Number(n).toFixed(1)}%`;
+}
+function fmtSignedBillion(n) {
+  if (n === null || n === undefined || n === "") return "—";
+  const val = Number(n);
+  const sign = val > 0 ? "+" : (val < 0 ? "−" : "");
+  return `${sign}${Math.abs(val).toLocaleString(undefined, { maximumFractionDigits: 0 })} B`;
+}
+
+/* ---------- Data helpers ---------- */
+
+function planetCountries(planet) {
+  // If no data yet (real planets), return empty array
+  return Array.isArray(planet?.countries) ? planet.countries : [];
+}
+
+function countryById(planet, id) {
+  return planetCountries(planet).find(c => c.id === id) || null;
+}
+
+function buildRankings(planet, key, direction = "desc") {
+  const countries = planetCountries(planet);
+  const rows = countries
+    .map(c => ({ id: c.id, name: c.name, value: c.indicators?.[key] }))
+    .filter(r => r.value !== null && r.value !== undefined && r.value !== "");
+
+  rows.sort((a, b) => {
+    const av = Number(a.value), bv = Number(b.value);
+    if (direction === "asc") return av - bv;
+    return bv - av;
+  });
+
+  return rows;
+}
+
+/* ---------- Diplomacy web (SVG) ---------- */
+
+function diplomacyWebSvg(planet) {
+  const countries = planetCountries(planet);
+  const n = countries.length;
+
+  if (n < 2) {
+    return `<div class="small">No diplomacy data yet for this planet.</div>`;
+  }
+
+  // layout
+  const W = 900;
+  const H = 520;
+  const cx = W / 2;
+  const cy = H / 2;
+  const r = Math.min(W, H) * 0.36;
+
+  const nodes = countries.map((c, i) => {
+    const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
+    return {
+      ...c,
+      x: cx + r * Math.cos(angle),
+      y: cy + r * Math.sin(angle),
+    };
+  });
+
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+  // Build undirected unique edges (avoid double drawing)
+  const seen = new Set();
+  const edges = [];
+  for (const a of countries) {
+    const rels = a.diplomacy || {};
+    for (const [bId, rel] of Object.entries(rels)) {
+      if (!nodeMap.has(bId)) continue;
+      const key = [a.id, bId].sort().join("|");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ a: a.id, b: bId, rel });
+    }
+  }
+
+  const edgeLines = edges.map(e => {
+    const A = nodeMap.get(e.a);
+    const B = nodeMap.get(e.b);
+    const style = RELATIONSHIP_STYLES[e.rel] || { color: "#a3a3a3" };
+    return `<line x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}" x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}" stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
+  }).join("");
+
+  const nodeDots = nodes.map(n => {
+    return `
+      <circle class="nodeCircle" cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="18" fill="rgba(255,255,255,0.08)"></circle>
+      <circle cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="12" fill="rgba(255,255,255,0.85)"></circle>
+      <text class="nodeLabel" x="${n.x.toFixed(2)}" y="${(n.y + 34).toFixed(2)}" text-anchor="middle">${escapeHtml(n.name)}</text>
+    `;
+  }).join("");
+
+  return `
+    <div class="graphWrap">
+      <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Diplomacy web">
+        ${edgeLines}
+        ${nodeDots}
+      </svg>
+    </div>
+    ${legendHtml()}
+  `;
+}
+
+function legendHtml() {
+  const items = Object.entries(RELATIONSHIP_STYLES).map(([k, v]) => {
+    return `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`;
+  }).join("");
+  return `<div class="graphLegend">${items}</div>`;
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 /* ---------- Views ---------- */
 
-function viewHome() {
-  const def = getDefaultPlanet();
-  return `
-    <section class="card">
-      <h2>Welcome</h2>
-      <p>This site will display the diplomacy matrix and (soon) country profiles pulled from each planet’s Data Log.</p>
-      <p class="small">
-        Current integration target: <span class="badge">${def ? def.label : "None"}</span>
-      </p>
-      <p>
-        Start here:
-        <a class="inline" href="#/diplomacy?planet=${encodeURIComponent(def?.id || "")}">Diplomacy (TEST)</a> or
-        <a class="inline" href="#/planet?planet=${encodeURIComponent(def?.id || "")}">Planet Hub (TEST)</a>.
-      </p>
-    </section>
-  `;
-}
-
-function viewPlanets() {
+function viewChoosePlanet() {
   const buttons = PLANETS.map(p =>
     `<button onclick="location.hash='#/planet?planet=${encodeURIComponent(p.id)}'">${p.label}</button>`
   ).join("");
 
   return `
     <section class="card">
-      <h2>Planets</h2>
-      <p>Select a planet hub. We’ll integrate TEST first, then roll it out to the real planets.</p>
+      <h2 class="heroTitle">Choose a Planet</h2>
+      <p class="small">Navigation begins with planet selection. TEST is fully populated right now; the others will be wired after.</p>
       <div class="buttonRow">${buttons}</div>
     </section>
   `;
 }
 
-function viewPlanetHub(planet) {
-  // Placeholder list: later we’ll populate from planet data log
-  const demoCountries = ["Country A", "Country B", "Country C", "Country D"];
-  const countryLinks = demoCountries.map(c => {
-    const href = `#/country?planet=${encodeURIComponent(planet.id)}&country=${encodeURIComponent(c)}`;
-    return `<li><a class="inline" href="${href}">${c}</a></li>`;
+function viewPlanet(planet) {
+  const countries = planetCountries(planet);
+
+  const countryLinks = countries.length
+    ? countries.map(c => {
+        const href = `#/country?planet=${encodeURIComponent(planet.id)}&country=${encodeURIComponent(c.id)}`;
+        return `<li><a class="inline" href="${href}">${escapeHtml(c.name)}</a></li>`;
+      }).join("")
+    : `<li class="small">No data yet. This planet will populate after TEST integration is done.</li>`;
+
+  const rankings = rankingsPanelsHtml(planet);
+
+  return `
+    <section class="card">
+      <div class="hstack" style="justify-content:space-between;">
+        <div>
+          <h2 class="heroTitle">${planet.label}</h2>
+          <div class="small">Planet ID: <span class="badge">${planet.id}</span></div>
+        </div>
+        <div class="buttonRow">
+          <button onclick="location.hash='#/'">Change Planet</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">Diplomacy Web</h3>
+      ${diplomacyWebSvg(planet)}
+    </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">Countries</h3>
+      <ul>${countryLinks}</ul>
+    </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">Rankings</h3>
+      <p class="small">Each ranking lists the country and the value for the indicator.</p>
+      ${rankings}
+    </section>
+  `;
+}
+
+function rankingsPanelsHtml(planet) {
+  const blocks = [
+    { key: "rGDP", label: "Real GDP (rGDP, $B)", fmt: fmtBillion, dir: "desc" },
+    { key: "rGDPpc", label: "Real GDP per Capita ($)", fmt: fmtDollars, dir: "desc" },
+    { key: "unemployment", label: "Unemployment Rate (%)", fmt: fmtPct, dir: "asc" },
+    { key: "inflation", label: "Inflation Rate (%)", fmt: fmtPct, dir: "asc" },
+    { key: "tradeBalance", label: "Trade Balance ($B)", fmt: fmtSignedBillion, dir: "desc" },
+  ];
+
+  const panels = blocks.map(b => {
+    const rows = buildRankings(planet, b.key, b.dir);
+    const tableRows = rows.length
+      ? rows.map((r, i) => `
+          <tr>
+            <td class="num">${i + 1}</td>
+            <td>${escapeHtml(r.name)}</td>
+            <td class="num">${b.fmt(r.value)}</td>
+          </tr>
+        `).join("")
+      : `<tr><td colspan="3" class="small">No data yet for this indicator.</td></tr>`;
+
+    return `
+      <div class="card" style="box-shadow:none; border:1px solid #eee;">
+        <h4 style="margin:0 0 10px 0;">${escapeHtml(b.label)}</h4>
+        <table class="table">
+          <thead>
+            <tr><th class="num">#</th><th>Country</th><th class="num">Value</th></tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+    `;
   }).join("");
 
-  return `
-    <section class="card">
-      <h2>Planet Hub: ${planet.label}</h2>
-      <p class="small">Planet ID: <span class="badge">${planet.id}</span></p>
-
-      <div class="buttonRow" style="margin:12px 0;">
-        <button onclick="location.hash='#/diplomacy?planet=${encodeURIComponent(planet.id)}'">View Diplomacy</button>
-        <button onclick="location.hash='#/planets'">Back to Planets</button>
-      </div>
-
-      <h3>Countries (placeholder)</h3>
-      <ul>
-        ${countryLinks}
-      </ul>
-      <p class="small">
-        ${planet.id === "test"
-          ? "TEST is where we will wire live data first."
-          : "Next: replace this placeholder list with live countries from the Data Log collector sheet for this planet."
-        }
-      </p>
-    </section>
-  `;
+  return `<div class="grid2">${panels}</div>`;
 }
 
-function viewDiplomacy(planet) {
-  // Placeholder “matrix” until we connect real data
-  const countries = ["Country A", "Country B", "Country C", "Country D"];
-
-  let html = `
-    <section class="card">
-      <h2>Diplomacy</h2>
-      <p class="small">Planet: <span class="badge">${planet ? planet.label : "Unknown"}</span> (placeholder)</p>
-      <p class="small">Next: replace “Neutral” with the real relationship values from your diplomacy collector endpoint.</p>
-    </section>
-    <section class="card">
-      <table class="table">
-        <thead>
-          <tr><th></th>${countries.map(c => `<th>${c}</th>`).join("")}</tr>
-        </thead>
-        <tbody>
-  `;
-
-  for (const r of countries) {
-    html += `<tr><th>${r}</th>`;
-    for (const c of countries) {
-      html += `<td>${r === c ? "—" : "Neutral"}</td>`;
-    }
-    html += `</tr>`;
+function viewCountry(planet, country) {
+  if (!country) {
+    return `
+      <section class="card">
+        <h2>Country not found</h2>
+        <p class="small">That country ID does not exist for this planet (yet).</p>
+        <p><a class="inline" href="#/planet?planet=${encodeURIComponent(planet.id)}">Back to ${planet.label}</a></p>
+      </section>
+    `;
   }
 
-  html += `
-        </tbody>
-      </table>
-    </section>
-  `;
+  const resourcesRows = (country.resources || [])
+    .map(r => `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.type)}</td><td class="num">${Number(r.share).toFixed(0)}%</td></tr>`)
+    .join("") || `<tr><td colspan="3" class="small">No resources available yet.</td></tr>`;
 
-  return html;
-}
+  const diplomacyRows = diplomacyTableRows(planet, country);
 
-function viewCountryProfile(planet, countryName) {
+  const ind = country.indicators || {};
   return `
     <section class="card">
-      <h2>Country Profile (placeholder)</h2>
-      <p><span class="badge">${planet ? planet.label : "Unknown planet"}</span> — <strong>${countryName || "Unknown country"}</strong></p>
-
-      <h3>Planned Data (from Data Log)</h3>
-      <ul>
-        <li>Population, unemployment, inflation, rGDP, rGDP per capita</li>
-        <li>Resources + values</li>
-        <li>Trade posture and diplomacy relationships</li>
-        <li>“Last updated” timestamp</li>
-      </ul>
-
-      <p class="small">
-        Next: wire this page to the planet’s Data Log spreadsheet so it automatically fills these fields.
-      </p>
-
-      <div class="buttonRow" style="margin-top:12px;">
-        ${planet ? `<button onclick="location.hash='#/planet?planet=${encodeURIComponent(planet.id)}'">Back to ${planet.label}</button>` : ""}
-        <button onclick="history.back()">Back</button>
+      <div class="hstack" style="justify-content:space-between;">
+        <div class="hstack">
+          <img class="flag" src="${country.flagUrl}" alt="Flag of ${escapeHtml(country.name)}" />
+          <div>
+            <h2 class="heroTitle" style="margin-bottom:4px;">${escapeHtml(country.name)}</h2>
+            <div class="small"><span class="badge">${planet.label}</span> • Demonym: <strong>${escapeHtml(country.demonym || "—")}</strong></div>
+            <div class="small">Motto: <em>${escapeHtml(country.motto || "—")}</em></div>
+          </div>
+        </div>
+        <div class="buttonRow">
+          <button onclick="location.hash='#/planet?planet=${encodeURIComponent(planet.id)}'">Back to ${planet.label}</button>
+        </div>
       </div>
     </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">Key Indicators</h3>
+      <table class="table">
+        <tbody>
+          <tr><th>Real GDP (rGDP)</th><td class="num">${fmtBillion(ind.rGDP)}</td></tr>
+          <tr><th>Real GDP per Capita</th><td class="num">${fmtDollars(ind.rGDPpc)}</td></tr>
+          <tr><th>Unemployment Rate</th><td class="num">${fmtPct(ind.unemployment)}</td></tr>
+          <tr><th>Inflation Rate</th><td class="num">${fmtPct(ind.inflation)}</td></tr>
+          <tr><th>Trade Balance</th><td class="num">${fmtSignedBillion(ind.tradeBalance)}</td></tr>
+        </tbody>
+      </table>
+      <p class="small">We’ll expand this list as we map more columns from your Data Log sheets.</p>
+    </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">Resource Distribution</h3>
+      <table class="table">
+        <thead><tr><th>Resource</th><th>Type</th><th class="num">Share</th></tr></thead>
+        <tbody>${resourcesRows}</tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">Diplomatic Relationships</h3>
+      <table class="table">
+        <thead><tr><th>Partner</th><th>Relationship</th></tr></thead>
+        <tbody>${diplomacyRows}</tbody>
+      </table>
+      <p class="small">Later this will reflect the live diplomacy matrix from your collector data.</p>
+    </section>
   `;
+}
+
+function diplomacyTableRows(planet, country) {
+  const rels = country.diplomacy || {};
+  const rows = Object.entries(rels).map(([targetId, relKey]) => {
+    const target = countryById(planet, targetId);
+    const style = RELATIONSHIP_STYLES[relKey] || { label: relKey, color: "#a3a3a3" };
+    const partnerName = target ? target.name : targetId;
+    return `<tr><td>${escapeHtml(partnerName)}</td><td><span class="badge" style="background:${style.color}; color:#fff;">${escapeHtml(style.label || relKey)}</span></td></tr>`;
+  }).join("");
+
+  return rows || `<tr><td colspan="2" class="small">No diplomacy data available yet.</td></tr>`;
 }
 
 /* ---------- Router ---------- */
@@ -164,45 +344,33 @@ function render() {
   const { path, params } = parseRoute();
 
   if (path === "/" || path === "") {
-    app.innerHTML = viewHome();
-    return;
-  }
-
-  if (path === "/planets") {
-    app.innerHTML = viewPlanets();
+    setNav(null);
+    app.innerHTML = viewChoosePlanet();
     return;
   }
 
   if (path === "/planet") {
     const planetParam = params.get("planet");
-    const planet = findPlanet(planetParam);
-    if (!planet) {
-      app.innerHTML = `<section class="card"><h2>Planet not found</h2><p>Missing/invalid planet parameter.</p><p><a class="inline" href="#/planets">Go to Planets</a></p></section>`;
-      return;
-    }
-    app.innerHTML = viewPlanetHub(planet);
-    return;
-  }
-
-  if (path === "/diplomacy") {
-    const planetParam = params.get("planet");
     const planet = findPlanet(planetParam) || getDefaultPlanet();
-    app.innerHTML = viewDiplomacy(planet);
+    setNav(planet);
+    app.innerHTML = viewPlanet(planet);
     return;
   }
 
   if (path === "/country") {
     const planetParam = params.get("planet");
-    const country = params.get("country");
+    const countryId = params.get("country"); // country stored as id
     const planet = findPlanet(planetParam) || getDefaultPlanet();
-    app.innerHTML = viewCountryProfile(planet, country);
+    const country = countryById(planet, countryId);
+    setNav(planet);
+    app.innerHTML = viewCountry(planet, country);
     return;
   }
 
-  // fallback
-  app.innerHTML = `<section class="card"><h2>Not Found</h2><p>No page at <span class="badge">${path}</span>.</p><p><a class="inline" href="#/">Go Home</a></p></section>`;
+  // fallback -> choose planet
+  setNav(null);
+  app.innerHTML = viewChoosePlanet();
 }
 
-setNav();
 window.addEventListener("hashchange", render);
 render();
