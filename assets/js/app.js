@@ -3,8 +3,7 @@ import { PLANETS, RELATIONSHIP_STYLES } from "./config.js";
 const nav = document.getElementById("nav");
 const app = document.getElementById("app");
 
-// Cache loaded planet datasets
-const planetDataCache = new Map(); // planetId -> {countries, ...}
+const planetDataCache = new Map();
 
 function parseRoute() {
   const hash = window.location.hash || "#/";
@@ -52,33 +51,29 @@ async function ensurePlanetLoaded(planet) {
   if (!res.ok) throw new Error(`Failed to load ${planet.dataFile}: ${res.status}`);
   const json = await res.json();
 
-  // Normalize countries + flags
-  json.countries = (json.countries || []).map(c => ({
-    ...c,
-    flagUrl: normalizeDriveImageUrl(c.flagUrl),
-  }));
+  // Prefer flagPublicUrl if present (your new Column H output)
+  json.countries = (json.countries || []).map(c => {
+    const rawFlag =
+      c.flagPublicUrl ||
+      c.flagUrl ||
+      c.flag ||
+      c.flagLink ||
+      "";
+
+    return {
+      ...c,
+      flagUrl: normalizeDriveImageUrl(rawFlag),
+    };
+  });
 
   planetDataCache.set(planet.id, json);
   return json;
 }
 
-/**
- * Google Drive image links come in many formats.
- * We try to extract a file ID and convert to a hotlink-friendly URL.
- *
- * IMPORTANT: The file must be shared so "Anyone with the link" can view,
- * otherwise Drive returns an HTML permission page instead of an image.
- */
 function normalizeDriveImageUrl(url) {
   if (!url) return url;
   const s = String(url).trim();
 
-  // Common patterns:
-  // 1) https://drive.google.com/file/d/<ID>/view?usp=sharing
-  // 2) https://drive.google.com/open?id=<ID>
-  // 3) https://drive.google.com/uc?id=<ID>&export=download
-  // 4) https://drive.google.com/uc?export=view&id=<ID>
-  // 5) https://docs.google.com/uc?id=<ID>&export=download
   let id = null;
 
   let m = s.match(/drive\.google\.com\/file\/d\/([^/]+)\//i);
@@ -89,10 +84,8 @@ function normalizeDriveImageUrl(url) {
     if (m?.[1]) id = m[1];
   }
 
-  // folder link cannot render in <img>
   if (!id && /drive\.google\.com\/drive\/folders\//i.test(s)) return s;
 
-  // Raw ID fallback
   if (!id && /^[a-zA-Z0-9_-]{20,}$/.test(s)) id = s;
 
   if (!id) return s;
@@ -170,7 +163,6 @@ function diplomacyWebSvg(planetData) {
 
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
-  // unique undirected edges
   const seen = new Set();
   const edges = [];
   for (const a of countries) {
@@ -218,12 +210,8 @@ function legendHtml() {
   return `<div class="graphLegend">${items}</div>`;
 }
 
-/* ---------- Pie chart (SVG) ---------- */
-/**
- * Pie slices include ONLY resources with quantity > 0.
- * Legend shows NAMES ONLY.
- * Tooltip shows quantity on hover.
- */
+/* ---------- Pie chart (quantity > 0, legend names only, tooltip quantity) ---------- */
+
 function resourcePieChartHtml(country) {
   const resList = Array.isArray(country?.resources) ? country.resources : [];
   if (!resList.length) return `<div class="small">No resource distribution available.</div>`;
@@ -232,9 +220,7 @@ function resourcePieChartHtml(country) {
     .map(r => ({ name: r.name, quantity: Number(r.quantity || 0) }))
     .filter(x => x.quantity > 0);
 
-  if (!values.length) {
-    return `<div class="small">No resources with quantity above 0.</div>`;
-  }
+  if (!values.length) return `<div class="small">No resources with quantity above 0.</div>`;
 
   const total = values.reduce((a, b) => a + b.quantity, 0);
 
@@ -252,12 +238,9 @@ function resourcePieChartHtml(country) {
     const end = start + frac * Math.PI * 2;
     const d = arcPath(cx, cy, radius, start, end);
     const fill = palette[idx % palette.length];
-
     const tooltipText = `${v.name}: ${v.quantity.toLocaleString()}`;
-
-    const p = `<path d="${d}" fill="${fill}" data-tip="${escapeHtml(tooltipText)}"></path>`;
     start = end;
-    return p;
+    return `<path d="${d}" fill="${fill}" data-tip="${escapeHtml(tooltipText)}"></path>`;
   }).join("");
 
   const legend = values.map((v, idx) => {
@@ -317,11 +300,8 @@ function attachPieTooltipHandlers() {
 
   svg.addEventListener("mousemove", (e) => {
     const t = e.target;
-    if (t && t.tagName === "path" && t.dataset && t.dataset.tip) {
-      showTip(e, t.dataset.tip);
-    } else {
-      hideTip();
-    }
+    if (t && t.tagName === "path" && t.dataset && t.dataset.tip) showTip(e, t.dataset.tip);
+    else hideTip();
   });
 
   svg.addEventListener("mouseleave", hideTip);
@@ -337,7 +317,7 @@ function viewChoosePlanet() {
   return `
     <section class="card">
       <h2 class="heroTitle">Choose a Planet</h2>
-      <p class="small">TEST is loaded from JSON generated from your Data Log. Others will be wired after TEST looks correct.</p>
+      <p class="small">TEST is loaded from JSON. After copying flags to Column H, regenerate JSON to use the new public URLs.</p>
       <div class="buttonRow">${buttons}</div>
     </section>
   `;
@@ -419,6 +399,10 @@ function viewPlanet(planet, planetData) {
   `;
 }
 
+function planetCountries(planetData) {
+  return Array.isArray(planetData?.countries) ? planetData.countries : [];
+}
+
 function diplomacyTableRows(planetData, country) {
   const rels = country.diplomacy || {};
   const rows = Object.entries(rels).map(([targetId, meta]) => {
@@ -465,10 +449,6 @@ function viewCountry(planet, planetData, country) {
     })
     .join("") || `<tr><td colspan="4" class="small">No resources available yet.</td></tr>`;
 
-  const flagHelp = (country.flagUrl && /drive\.google\.com\/drive\/folders\//i.test(country.flagUrl))
-    ? `<p class="small"><strong>Flag link looks like a folder link</strong> (not a file). Use the image file’s share link instead.</p>`
-    : "";
-
   return `
     <section class="card">
       <div class="hstack" style="justify-content:space-between;">
@@ -490,11 +470,9 @@ function viewCountry(planet, planetData, country) {
 
       <div id="flagError" style="display:none; margin-top:10px;">
         <p class="small">
-          <strong>Flag didn’t load.</strong> This is almost always Google Drive permissions.
-          Make the image file shared as <em>Anyone with the link → Viewer</em>.
-          Then the site can render it.
+          <strong>Flag didn’t load.</strong> Once your Column H has the copied public URL,
+          regenerate your JSON to include <code>flagPublicUrl</code> and the site will use it automatically.
         </p>
-        ${flagHelp}
       </div>
     </section>
 
@@ -572,7 +550,6 @@ async function render() {
     const country = countryById(planetData, countryId);
     app.innerHTML = viewCountry(planet, planetData, country);
 
-    // Hook up tooltip events for the pie chart (country page only)
     attachPieTooltipHandlers();
     return;
   }
