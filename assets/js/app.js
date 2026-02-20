@@ -40,10 +40,8 @@ function setNav(planet = null) {
 async function ensurePlanetLoaded(planet) {
   if (!planet) return null;
 
-  // already loaded
   if (planetDataCache.has(planet.id)) return planetDataCache.get(planet.id);
 
-  // if no data source configured, store empty
   if (!planet.dataFile) {
     const empty = { countries: [] };
     planetDataCache.set(planet.id, empty);
@@ -54,26 +52,59 @@ async function ensurePlanetLoaded(planet) {
   if (!res.ok) throw new Error(`Failed to load ${planet.dataFile}: ${res.status}`);
   const json = await res.json();
 
-  // Normalize countries a bit
+  // Normalize countries + flags
   json.countries = (json.countries || []).map(c => ({
     ...c,
-    flagUrl: normalizeFlagUrl(c.flagUrl),
+    flagUrl: normalizeDriveImageUrl(c.flagUrl),
   }));
 
   planetDataCache.set(planet.id, json);
   return json;
 }
 
-function normalizeFlagUrl(url) {
+/**
+ * Google Drive image links come in many formats.
+ * We try to extract a file ID and convert to a hotlink-friendly URL.
+ *
+ * IMPORTANT: The file must be shared so "Anyone with the link" can view,
+ * otherwise Drive returns an HTML permission page instead of an image.
+ */
+function normalizeDriveImageUrl(url) {
   if (!url) return url;
+  const s = String(url).trim();
 
-  // Convert:
-  // https://drive.google.com/file/d/<ID>/view?usp=sharing
-  // -> https://drive.google.com/uc?export=view&id=<ID>
-  const m = String(url).match(/drive\.google\.com\/file\/d\/([^/]+)\//i);
-  if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+  // Common patterns:
+  // 1) https://drive.google.com/file/d/<ID>/view?usp=sharing
+  // 2) https://drive.google.com/open?id=<ID>
+  // 3) https://drive.google.com/uc?id=<ID>&export=download
+  // 4) https://drive.google.com/uc?export=view&id=<ID>
+  // 5) https://docs.google.com/uc?id=<ID>&export=download
+  // 6) Raw ID accidentally pasted (rare, but why not)
+  let id = null;
 
-  return url;
+  let m = s.match(/drive\.google\.com\/file\/d\/([^/]+)\//i);
+  if (m?.[1]) id = m[1];
+
+  if (!id) {
+    m = s.match(/[?&]id=([^&]+)/i);
+    if (m?.[1]) id = m[1];
+  }
+
+  if (!id) {
+    // sometimes share links look like: https://drive.google.com/drive/folders/<ID>
+    // That’s a folder link, not a file link — cannot be rendered as an image.
+    // We detect it and leave as-is (and we’ll show a helpful message).
+    if (/drive\.google\.com\/drive\/folders\//i.test(s)) return s;
+  }
+
+  // “Looks like an ID” fallback (letters, numbers, _-), min length ~ 20
+  if (!id && /^[a-zA-Z0-9_-]{20,}$/.test(s)) id = s;
+
+  if (!id) return s;
+
+  // Best for inline image rendering:
+  // Use "uc?export=view&id=" which typically returns the image bytes.
+  return `https://drive.google.com/uc?export=view&id=${id}`;
 }
 
 /* ---------- Formatting helpers ---------- */
@@ -96,7 +127,6 @@ function fmtSignedBillion(n) {
   const sign = val > 0 ? "+" : (val < 0 ? "−" : "");
   return `${sign}${Math.abs(val).toLocaleString(undefined, { maximumFractionDigits: 0 })} B`;
 }
-
 function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
@@ -109,11 +139,9 @@ function escapeHtml(s) {
 function planetCountries(planetData) {
   return Array.isArray(planetData?.countries) ? planetData.countries : [];
 }
-
 function countryById(planetData, id) {
   return planetCountries(planetData).find(c => c.id === id) || null;
 }
-
 function buildRankings(planetData, key, direction = "desc") {
   const rows = planetCountries(planetData)
     .map(c => ({ id: c.id, name: c.name, value: c.indicators?.[key] }))
@@ -197,6 +225,129 @@ function legendHtml() {
   return `<div class="graphLegend">${items}</div>`;
 }
 
+/* ---------- Pie chart (SVG) ---------- */
+/**
+ * Draws a pie chart using resources[].quantity if present,
+ * otherwise falls back to resources[].share.
+ *
+ * Tooltip shows quantity (or share if quantity missing).
+ */
+function resourcePieChartHtml(country) {
+  const resList = Array.isArray(country?.resources) ? country.resources : [];
+  if (!resList.length) return `<div class="small">No resource distribution available.</div>`;
+
+  // Prefer quantity; if all quantities missing/0, fall back to share
+  const useQuantity = resList.some(r => Number(r.quantity) > 0);
+  const values = resList.map(r => ({
+    name: r.name,
+    value: useQuantity ? Number(r.quantity || 0) : Number(r.share || 0),
+    quantity: Number(r.quantity || 0),
+    share: Number(r.share || 0),
+  })).filter(x => x.value > 0);
+
+  const total = values.reduce((a, b) => a + b.value, 0);
+  if (total <= 0) return `<div class="small">Resource values are all zero.</div>`;
+
+  const size = 260;
+  const cx = size / 2;
+  const cy = size / 2;
+  const radius = 100;
+
+  // Simple deterministic color palette (no external libs)
+  const palette = ["#2563eb","#16a34a","#f59e0b","#ef4444","#8b5cf6","#0ea5e9","#22c55e","#a3a3a3","#e11d48","#14b8a6"];
+
+  let start = -Math.PI / 2;
+  const paths = values.map((v, idx) => {
+    const frac = v.value / total;
+    const end = start + frac * Math.PI * 2;
+    const d = arcPath(cx, cy, radius, start, end);
+    const fill = palette[idx % palette.length];
+
+    // Tooltip text content (quantity is what you asked for)
+    const tooltipText = useQuantity
+      ? `${v.name}: ${v.quantity.toLocaleString()}`
+      : `${v.name}: ${v.share.toFixed(1)}%`;
+
+    const p = `
+      <path d="${d}" fill="${fill}" data-tip="${escapeHtml(tooltipText)}"></path>
+    `;
+    start = end;
+    return p;
+  }).join("");
+
+  // Legend
+  const legend = values.map((v, idx) => {
+    const fill = palette[idx % palette.length];
+    const label = useQuantity
+      ? `${v.name} — ${v.quantity.toLocaleString()}`
+      : `${v.name} — ${v.share.toFixed(1)}%`;
+    return `<div class="legendItem"><span class="legendSwatch" style="background:${fill}"></span>${escapeHtml(label)}</div>`;
+  }).join("");
+
+  // Wrap includes tooltip container; JS hooks are attached after render
+  return `
+    <div class="pieWrap" id="pieWrap">
+      <svg id="pieSvg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="Resource pie chart">
+        ${paths}
+      </svg>
+      <div class="pieTooltip" id="pieTooltip"></div>
+      <div class="small pieHint">Hover slices to see quantities.</div>
+    </div>
+    <div class="graphLegend" style="margin-top:12px;">
+      ${legend}
+    </div>
+  `;
+}
+
+function arcPath(cx, cy, r, startAngle, endAngle) {
+  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
+  const x1 = cx + r * Math.cos(startAngle);
+  const y1 = cy + r * Math.sin(startAngle);
+  const x2 = cx + r * Math.cos(endAngle);
+  const y2 = cy + r * Math.sin(endAngle);
+
+  return [
+    `M ${cx} ${cy}`,
+    `L ${x1.toFixed(3)} ${y1.toFixed(3)}`,
+    `A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(3)} ${y2.toFixed(3)}`,
+    "Z"
+  ].join(" ");
+}
+
+function attachPieTooltipHandlers() {
+  const wrap = document.getElementById("pieWrap");
+  const svg = document.getElementById("pieSvg");
+  const tip = document.getElementById("pieTooltip");
+  if (!wrap || !svg || !tip) return;
+
+  function showTip(e, text) {
+    tip.textContent = text;
+    tip.classList.add("show");
+
+    // Position relative to wrap
+    const wrapRect = wrap.getBoundingClientRect();
+    const x = e.clientX - wrapRect.left;
+    const y = e.clientY - wrapRect.top;
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+
+  function hideTip() {
+    tip.classList.remove("show");
+  }
+
+  svg.addEventListener("mousemove", (e) => {
+    const t = e.target;
+    if (t && t.tagName === "path" && t.dataset && t.dataset.tip) {
+      showTip(e, t.dataset.tip);
+    } else {
+      hideTip();
+    }
+  });
+
+  svg.addEventListener("mouseleave", hideTip);
+}
+
 /* ---------- Views ---------- */
 
 function viewChoosePlanet() {
@@ -207,7 +358,7 @@ function viewChoosePlanet() {
   return `
     <section class="card">
       <h2 class="heroTitle">Choose a Planet</h2>
-      <p class="small">TEST is now loaded from JSON generated from your Data Log template. The other planets will be wired after TEST is correct.</p>
+      <p class="small">TEST is loaded from JSON generated from your Data Log. Others will be wired after TEST looks correct.</p>
       <div class="buttonRow">${buttons}</div>
     </section>
   `;
@@ -323,14 +474,30 @@ function viewCountry(planet, planetData, country) {
   const ind = country.indicators || {};
 
   const resourcesRows = (country.resources || [])
-    .map(r => `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.type)}</td><td class="num">${Number(r.share).toFixed(1)}%</td></tr>`)
-    .join("") || `<tr><td colspan="3" class="small">No resources available yet.</td></tr>`;
+    .map(r => {
+      const qty = (r.quantity !== null && r.quantity !== undefined) ? Number(r.quantity) : null;
+      const qtyCell = (qty !== null && !Number.isNaN(qty)) ? qty.toLocaleString() : "—";
+      return `<tr>
+        <td>${escapeHtml(r.name)}</td>
+        <td>${escapeHtml(r.type)}</td>
+        <td class="num">${(Number(r.share) || 0).toFixed(1)}%</td>
+        <td class="num">${qtyCell}</td>
+      </tr>`;
+    })
+    .join("") || `<tr><td colspan="4" class="small">No resources available yet.</td></tr>`;
+
+  const flagHelp = (country.flagUrl && /drive\.google\.com\/drive\/folders\//i.test(country.flagUrl))
+    ? `<p class="small"><strong>Flag link looks like a folder link</strong> (not a file). Use the image file’s share link instead.</p>`
+    : "";
 
   return `
     <section class="card">
       <div class="hstack" style="justify-content:space-between;">
         <div class="hstack">
-          <img class="flag" src="${country.flagUrl || ""}" alt="Flag of ${escapeHtml(country.name)}" />
+          <img class="flag"
+               src="${country.flagUrl || ""}"
+               alt="Flag of ${escapeHtml(country.name)}"
+               onerror="this.style.display='none'; document.getElementById('flagError').style.display='block';" />
           <div>
             <h2 class="heroTitle" style="margin-bottom:4px;">${escapeHtml(country.name)}</h2>
             <div class="small"><span class="badge">${planet.label}</span> • Demonym: <strong>${escapeHtml(country.demonym || "—")}</strong></div>
@@ -340,6 +507,16 @@ function viewCountry(planet, planetData, country) {
         <div class="buttonRow">
           <button onclick="location.hash='#/planet?planet=${encodeURIComponent(planet.id)}'">Back to ${planet.label}</button>
         </div>
+      </div>
+
+      <div id="flagError" style="display:none; margin-top:10px;">
+        <p class="small">
+          <strong>Flag didn’t load.</strong> This is almost always Google Drive permissions.
+          Make the image file shared as <em>Anyone with the link → Viewer</em>.
+          Then the site can render it.
+        </p>
+        ${flagHelp}
+        <p class="small">If you want, paste one example flag link here and I’ll tell you whether it’s a file link or folder link.</p>
       </div>
     </section>
 
@@ -358,10 +535,18 @@ function viewCountry(planet, planetData, country) {
 
     <section class="card">
       <h3 class="sectionTitle">Resource Distribution</h3>
-      <table class="table">
-        <thead><tr><th>Resource</th><th>Type</th><th class="num">Share</th></tr></thead>
-        <tbody>${resourcesRows}</tbody>
-      </table>
+      <div class="hstack" style="align-items:flex-start;">
+        <div>
+          ${resourcePieChartHtml(country)}
+        </div>
+        <div style="flex:1; min-width: 280px;">
+          <table class="table">
+            <thead><tr><th>Resource</th><th>Type</th><th class="num">Share</th><th class="num">Quantity</th></tr></thead>
+            <tbody>${resourcesRows}</tbody>
+          </table>
+        </div>
+      </div>
+      <p class="small">Pie chart uses quantities when available; otherwise it falls back to share.</p>
     </section>
 
     <section class="card">
@@ -408,10 +593,12 @@ async function render() {
 
     const country = countryById(planetData, countryId);
     app.innerHTML = viewCountry(planet, planetData, country);
+
+    // Hook up tooltip events for the pie chart (country page only)
+    attachPieTooltipHandlers();
     return;
   }
 
-  // fallback
   setNav(null);
   app.innerHTML = viewChoosePlanet();
 }
