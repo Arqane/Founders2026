@@ -3,6 +3,9 @@ import { PLANETS, RELATIONSHIP_STYLES } from "./config.js";
 const nav = document.getElementById("nav");
 const app = document.getElementById("app");
 
+// Cache loaded planet datasets
+const planetDataCache = new Map(); // planetId -> {countries, ...}
+
 function parseRoute() {
   const hash = window.location.hash || "#/";
   const [pathPart, queryPart] = hash.slice(1).split("?");
@@ -22,7 +25,6 @@ function getDefaultPlanet() {
 }
 
 function setNav(planet = null) {
-  // Navigation begins with planet choice (per your spec)
   const planetCrumb = planet
     ? `<a href="#/planet?planet=${encodeURIComponent(planet.id)}">${planet.label}</a>`
     : "";
@@ -31,6 +33,47 @@ function setNav(planet = null) {
     <a href="#/">Choose Planet</a>
     ${planetCrumb}
   `;
+}
+
+/* ---------- Load data ---------- */
+
+async function ensurePlanetLoaded(planet) {
+  if (!planet) return null;
+
+  // already loaded
+  if (planetDataCache.has(planet.id)) return planetDataCache.get(planet.id);
+
+  // if no data source configured, store empty
+  if (!planet.dataFile) {
+    const empty = { countries: [] };
+    planetDataCache.set(planet.id, empty);
+    return empty;
+  }
+
+  const res = await fetch(planet.dataFile, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Failed to load ${planet.dataFile}: ${res.status}`);
+  const json = await res.json();
+
+  // Normalize countries a bit
+  json.countries = (json.countries || []).map(c => ({
+    ...c,
+    flagUrl: normalizeFlagUrl(c.flagUrl),
+  }));
+
+  planetDataCache.set(planet.id, json);
+  return json;
+}
+
+function normalizeFlagUrl(url) {
+  if (!url) return url;
+
+  // Convert:
+  // https://drive.google.com/file/d/<ID>/view?usp=sharing
+  // -> https://drive.google.com/uc?export=view&id=<ID>
+  const m = String(url).match(/drive\.google\.com\/file\/d\/([^/]+)\//i);
+  if (m && m[1]) return `https://drive.google.com/uc?export=view&id=${m[1]}`;
+
+  return url;
 }
 
 /* ---------- Formatting helpers ---------- */
@@ -54,20 +97,25 @@ function fmtSignedBillion(n) {
   return `${sign}${Math.abs(val).toLocaleString(undefined, { maximumFractionDigits: 0 })} B`;
 }
 
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 /* ---------- Data helpers ---------- */
 
-function planetCountries(planet) {
-  // If no data yet (real planets), return empty array
-  return Array.isArray(planet?.countries) ? planet.countries : [];
+function planetCountries(planetData) {
+  return Array.isArray(planetData?.countries) ? planetData.countries : [];
 }
 
-function countryById(planet, id) {
-  return planetCountries(planet).find(c => c.id === id) || null;
+function countryById(planetData, id) {
+  return planetCountries(planetData).find(c => c.id === id) || null;
 }
 
-function buildRankings(planet, key, direction = "desc") {
-  const countries = planetCountries(planet);
-  const rows = countries
+function buildRankings(planetData, key, direction = "desc") {
+  const rows = planetCountries(planetData)
     .map(c => ({ id: c.id, name: c.name, value: c.indicators?.[key] }))
     .filter(r => r.value !== null && r.value !== undefined && r.value !== "");
 
@@ -82,15 +130,12 @@ function buildRankings(planet, key, direction = "desc") {
 
 /* ---------- Diplomacy web (SVG) ---------- */
 
-function diplomacyWebSvg(planet) {
-  const countries = planetCountries(planet);
+function diplomacyWebSvg(planetData) {
+  const countries = planetCountries(planetData);
   const n = countries.length;
 
-  if (n < 2) {
-    return `<div class="small">No diplomacy data yet for this planet.</div>`;
-  }
+  if (n < 2) return `<div class="small">No diplomacy data yet for this planet.</div>`;
 
-  // layout
   const W = 900;
   const H = 520;
   const cx = W / 2;
@@ -99,43 +144,40 @@ function diplomacyWebSvg(planet) {
 
   const nodes = countries.map((c, i) => {
     const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
-    return {
-      ...c,
-      x: cx + r * Math.cos(angle),
-      y: cy + r * Math.sin(angle),
-    };
+    return { ...c, x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
   });
 
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
-  // Build undirected unique edges (avoid double drawing)
+  // unique undirected edges
   const seen = new Set();
   const edges = [];
   for (const a of countries) {
     const rels = a.diplomacy || {};
-    for (const [bId, rel] of Object.entries(rels)) {
+    for (const [bId, meta] of Object.entries(rels)) {
       if (!nodeMap.has(bId)) continue;
       const key = [a.id, bId].sort().join("|");
       if (seen.has(key)) continue;
       seen.add(key);
-      edges.push({ a: a.id, b: bId, rel });
+
+      const relKey = meta?.key || "neutral";
+      edges.push({ a: a.id, b: bId, relKey });
     }
   }
 
   const edgeLines = edges.map(e => {
     const A = nodeMap.get(e.a);
     const B = nodeMap.get(e.b);
-    const style = RELATIONSHIP_STYLES[e.rel] || { color: "#a3a3a3" };
-    return `<line x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}" x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}" stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
+    const style = RELATIONSHIP_STYLES[e.relKey] || RELATIONSHIP_STYLES.neutral;
+    return `<line x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}" x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
+      stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
   }).join("");
 
-  const nodeDots = nodes.map(n => {
-    return `
-      <circle class="nodeCircle" cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="18" fill="rgba(255,255,255,0.08)"></circle>
-      <circle cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="12" fill="rgba(255,255,255,0.85)"></circle>
-      <text class="nodeLabel" x="${n.x.toFixed(2)}" y="${(n.y + 34).toFixed(2)}" text-anchor="middle">${escapeHtml(n.name)}</text>
-    `;
-  }).join("");
+  const nodeDots = nodes.map(n => `
+    <circle class="nodeCircle" cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="18" fill="rgba(255,255,255,0.08)"></circle>
+    <circle cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="12" fill="rgba(255,255,255,0.85)"></circle>
+    <text class="nodeLabel" x="${n.x.toFixed(2)}" y="${(n.y + 34).toFixed(2)}" text-anchor="middle">${escapeHtml(n.name)}</text>
+  `).join("");
 
   return `
     <div class="graphWrap">
@@ -149,17 +191,10 @@ function diplomacyWebSvg(planet) {
 }
 
 function legendHtml() {
-  const items = Object.entries(RELATIONSHIP_STYLES).map(([k, v]) => {
-    return `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`;
-  }).join("");
+  const items = Object.entries(RELATIONSHIP_STYLES).map(([, v]) =>
+    `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
+  ).join("");
   return `<div class="graphLegend">${items}</div>`;
-}
-
-function escapeHtml(s) {
-  return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
 }
 
 /* ---------- Views ---------- */
@@ -172,23 +207,56 @@ function viewChoosePlanet() {
   return `
     <section class="card">
       <h2 class="heroTitle">Choose a Planet</h2>
-      <p class="small">Navigation begins with planet selection. TEST is fully populated right now; the others will be wired after.</p>
+      <p class="small">TEST is now loaded from JSON generated from your Data Log template. The other planets will be wired after TEST is correct.</p>
       <div class="buttonRow">${buttons}</div>
     </section>
   `;
 }
 
-function viewPlanet(planet) {
-  const countries = planetCountries(planet);
+function rankingsPanelsHtml(planetData) {
+  const blocks = [
+    { key: "rGDP", label: "Real GDP (rGDP, $B)", fmt: fmtBillion, dir: "desc" },
+    { key: "rGDPpc", label: "Real GDP per Capita ($)", fmt: fmtDollars, dir: "desc" },
+    { key: "unemployment", label: "Unemployment Rate (%)", fmt: fmtPct, dir: "asc" },
+    { key: "inflation", label: "Inflation Rate (%)", fmt: fmtPct, dir: "asc" },
+    { key: "tradeBalance", label: "Trade Balance ($B)", fmt: fmtSignedBillion, dir: "desc" },
+  ];
+
+  const panels = blocks.map(b => {
+    const rows = buildRankings(planetData, b.key, b.dir);
+    const tableRows = rows.length
+      ? rows.map((r, i) => `
+          <tr>
+            <td class="num">${i + 1}</td>
+            <td>${escapeHtml(r.name)}</td>
+            <td class="num">${b.fmt(r.value)}</td>
+          </tr>
+        `).join("")
+      : `<tr><td colspan="3" class="small">No data yet for this indicator.</td></tr>`;
+
+    return `
+      <div class="card" style="box-shadow:none; border:1px solid #eee;">
+        <h4 style="margin:0 0 10px 0;">${escapeHtml(b.label)}</h4>
+        <table class="table">
+          <thead><tr><th class="num">#</th><th>Country</th><th class="num">Value</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+    `;
+  }).join("");
+
+  return `<div class="grid2">${panels}</div>`;
+}
+
+function viewPlanet(planet, planetData) {
+  const countries = planetCountries(planetData);
 
   const countryLinks = countries.length
     ? countries.map(c => {
         const href = `#/country?planet=${encodeURIComponent(planet.id)}&country=${encodeURIComponent(c.id)}`;
         return `<li><a class="inline" href="${href}">${escapeHtml(c.name)}</a></li>`;
       }).join("")
-    : `<li class="small">No data yet. This planet will populate after TEST integration is done.</li>`;
-
-  const rankings = rankingsPanelsHtml(planet);
+    : `<li class="small">No data yet.</li>`;
 
   return `
     <section class="card">
@@ -205,7 +273,7 @@ function viewPlanet(planet) {
 
     <section class="card">
       <h3 class="sectionTitle">Diplomacy Web</h3>
-      ${diplomacyWebSvg(planet)}
+      ${diplomacyWebSvg(planetData)}
     </section>
 
     <section class="card">
@@ -216,49 +284,32 @@ function viewPlanet(planet) {
     <section class="card">
       <h3 class="sectionTitle">Rankings</h3>
       <p class="small">Each ranking lists the country and the value for the indicator.</p>
-      ${rankings}
+      ${rankingsPanelsHtml(planetData)}
     </section>
   `;
 }
 
-function rankingsPanelsHtml(planet) {
-  const blocks = [
-    { key: "rGDP", label: "Real GDP (rGDP, $B)", fmt: fmtBillion, dir: "desc" },
-    { key: "rGDPpc", label: "Real GDP per Capita ($)", fmt: fmtDollars, dir: "desc" },
-    { key: "unemployment", label: "Unemployment Rate (%)", fmt: fmtPct, dir: "asc" },
-    { key: "inflation", label: "Inflation Rate (%)", fmt: fmtPct, dir: "asc" },
-    { key: "tradeBalance", label: "Trade Balance ($B)", fmt: fmtSignedBillion, dir: "desc" },
-  ];
+function diplomacyTableRows(planetData, country) {
+  const rels = country.diplomacy || {};
+  const rows = Object.entries(rels).map(([targetId, meta]) => {
+    const target = countryById(planetData, targetId);
+    const relKey = meta?.key || "neutral";
+    const style = RELATIONSHIP_STYLES[relKey] || RELATIONSHIP_STYLES.neutral;
+    const partnerName = target ? target.name : targetId;
 
-  const panels = blocks.map(b => {
-    const rows = buildRankings(planet, b.key, b.dir);
-    const tableRows = rows.length
-      ? rows.map((r, i) => `
-          <tr>
-            <td class="num">${i + 1}</td>
-            <td>${escapeHtml(r.name)}</td>
-            <td class="num">${b.fmt(r.value)}</td>
-          </tr>
-        `).join("")
-      : `<tr><td colspan="3" class="small">No data yet for this indicator.</td></tr>`;
+    const label = meta?.relationship || style.label;
+    const status = meta?.status ? ` <span class="small">(${escapeHtml(meta.status)})</span>` : "";
 
-    return `
-      <div class="card" style="box-shadow:none; border:1px solid #eee;">
-        <h4 style="margin:0 0 10px 0;">${escapeHtml(b.label)}</h4>
-        <table class="table">
-          <thead>
-            <tr><th class="num">#</th><th>Country</th><th class="num">Value</th></tr>
-          </thead>
-          <tbody>${tableRows}</tbody>
-        </table>
-      </div>
-    `;
+    return `<tr>
+      <td>${escapeHtml(partnerName)}</td>
+      <td><span class="badge" style="background:${style.color}; color:#fff;">${escapeHtml(label)}</span>${status}</td>
+    </tr>`;
   }).join("");
 
-  return `<div class="grid2">${panels}</div>`;
+  return rows || `<tr><td colspan="2" class="small">No diplomacy data available yet.</td></tr>`;
 }
 
-function viewCountry(planet, country) {
+function viewCountry(planet, planetData, country) {
   if (!country) {
     return `
       <section class="card">
@@ -269,18 +320,17 @@ function viewCountry(planet, country) {
     `;
   }
 
+  const ind = country.indicators || {};
+
   const resourcesRows = (country.resources || [])
-    .map(r => `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.type)}</td><td class="num">${Number(r.share).toFixed(0)}%</td></tr>`)
+    .map(r => `<tr><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.type)}</td><td class="num">${Number(r.share).toFixed(1)}%</td></tr>`)
     .join("") || `<tr><td colspan="3" class="small">No resources available yet.</td></tr>`;
 
-  const diplomacyRows = diplomacyTableRows(planet, country);
-
-  const ind = country.indicators || {};
   return `
     <section class="card">
       <div class="hstack" style="justify-content:space-between;">
         <div class="hstack">
-          <img class="flag" src="${country.flagUrl}" alt="Flag of ${escapeHtml(country.name)}" />
+          <img class="flag" src="${country.flagUrl || ""}" alt="Flag of ${escapeHtml(country.name)}" />
           <div>
             <h2 class="heroTitle" style="margin-bottom:4px;">${escapeHtml(country.name)}</h2>
             <div class="small"><span class="badge">${planet.label}</span> • Demonym: <strong>${escapeHtml(country.demonym || "—")}</strong></div>
@@ -304,7 +354,6 @@ function viewCountry(planet, country) {
           <tr><th>Trade Balance</th><td class="num">${fmtSignedBillion(ind.tradeBalance)}</td></tr>
         </tbody>
       </table>
-      <p class="small">We’ll expand this list as we map more columns from your Data Log sheets.</p>
     </section>
 
     <section class="card">
@@ -319,28 +368,15 @@ function viewCountry(planet, country) {
       <h3 class="sectionTitle">Diplomatic Relationships</h3>
       <table class="table">
         <thead><tr><th>Partner</th><th>Relationship</th></tr></thead>
-        <tbody>${diplomacyRows}</tbody>
+        <tbody>${diplomacyTableRows(planetData, country)}</tbody>
       </table>
-      <p class="small">Later this will reflect the live diplomacy matrix from your collector data.</p>
     </section>
   `;
 }
 
-function diplomacyTableRows(planet, country) {
-  const rels = country.diplomacy || {};
-  const rows = Object.entries(rels).map(([targetId, relKey]) => {
-    const target = countryById(planet, targetId);
-    const style = RELATIONSHIP_STYLES[relKey] || { label: relKey, color: "#a3a3a3" };
-    const partnerName = target ? target.name : targetId;
-    return `<tr><td>${escapeHtml(partnerName)}</td><td><span class="badge" style="background:${style.color}; color:#fff;">${escapeHtml(style.label || relKey)}</span></td></tr>`;
-  }).join("");
+/* ---------- Router (async) ---------- */
 
-  return rows || `<tr><td colspan="2" class="small">No diplomacy data available yet.</td></tr>`;
-}
-
-/* ---------- Router ---------- */
-
-function render() {
+async function render() {
   const { path, params } = parseRoute();
 
   if (path === "/" || path === "") {
@@ -353,24 +389,43 @@ function render() {
     const planetParam = params.get("planet");
     const planet = findPlanet(planetParam) || getDefaultPlanet();
     setNav(planet);
-    app.innerHTML = viewPlanet(planet);
+
+    app.innerHTML = `<section class="card"><h2 class="heroTitle">Loading ${planet.label}…</h2><p class="small">Fetching planet data.</p></section>`;
+    const planetData = await ensurePlanetLoaded(planet);
+
+    app.innerHTML = viewPlanet(planet, planetData);
     return;
   }
 
   if (path === "/country") {
     const planetParam = params.get("planet");
-    const countryId = params.get("country"); // country stored as id
+    const countryId = params.get("country");
     const planet = findPlanet(planetParam) || getDefaultPlanet();
-    const country = countryById(planet, countryId);
     setNav(planet);
-    app.innerHTML = viewCountry(planet, country);
+
+    app.innerHTML = `<section class="card"><h2 class="heroTitle">Loading ${planet.label}…</h2><p class="small">Fetching planet data.</p></section>`;
+    const planetData = await ensurePlanetLoaded(planet);
+
+    const country = countryById(planetData, countryId);
+    app.innerHTML = viewCountry(planet, planetData, country);
     return;
   }
 
-  // fallback -> choose planet
+  // fallback
   setNav(null);
   app.innerHTML = viewChoosePlanet();
 }
 
-window.addEventListener("hashchange", render);
-render();
+window.addEventListener("hashchange", () => { render().catch(err => showError(err)); });
+render().catch(err => showError(err));
+
+function showError(err) {
+  console.error(err);
+  app.innerHTML = `
+    <section class="card">
+      <h2>Load error</h2>
+      <p class="small">${escapeHtml(err?.message || String(err))}</p>
+      <p><a class="inline" href="#/">Back to Choose Planet</a></p>
+    </section>
+  `;
+}
