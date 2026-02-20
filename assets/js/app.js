@@ -79,7 +79,6 @@ function normalizeDriveImageUrl(url) {
   // 3) https://drive.google.com/uc?id=<ID>&export=download
   // 4) https://drive.google.com/uc?export=view&id=<ID>
   // 5) https://docs.google.com/uc?id=<ID>&export=download
-  // 6) Raw ID accidentally pasted (rare, but why not)
   let id = null;
 
   let m = s.match(/drive\.google\.com\/file\/d\/([^/]+)\//i);
@@ -90,20 +89,14 @@ function normalizeDriveImageUrl(url) {
     if (m?.[1]) id = m[1];
   }
 
-  if (!id) {
-    // sometimes share links look like: https://drive.google.com/drive/folders/<ID>
-    // That’s a folder link, not a file link — cannot be rendered as an image.
-    // We detect it and leave as-is (and we’ll show a helpful message).
-    if (/drive\.google\.com\/drive\/folders\//i.test(s)) return s;
-  }
+  // folder link cannot render in <img>
+  if (!id && /drive\.google\.com\/drive\/folders\//i.test(s)) return s;
 
-  // “Looks like an ID” fallback (letters, numbers, _-), min length ~ 20
+  // Raw ID fallback
   if (!id && /^[a-zA-Z0-9_-]{20,}$/.test(s)) id = s;
 
   if (!id) return s;
 
-  // Best for inline image rendering:
-  // Use "uc?export=view&id=" which typically returns the image bytes.
   return `https://drive.google.com/uc?export=view&id=${id}`;
 }
 
@@ -227,64 +220,51 @@ function legendHtml() {
 
 /* ---------- Pie chart (SVG) ---------- */
 /**
- * Draws a pie chart using resources[].quantity if present,
- * otherwise falls back to resources[].share.
- *
- * Tooltip shows quantity (or share if quantity missing).
+ * Pie slices include ONLY resources with quantity > 0.
+ * Legend shows NAMES ONLY.
+ * Tooltip shows quantity on hover.
  */
 function resourcePieChartHtml(country) {
   const resList = Array.isArray(country?.resources) ? country.resources : [];
   if (!resList.length) return `<div class="small">No resource distribution available.</div>`;
 
-  // Prefer quantity; if all quantities missing/0, fall back to share
-  const useQuantity = resList.some(r => Number(r.quantity) > 0);
-  const values = resList.map(r => ({
-    name: r.name,
-    value: useQuantity ? Number(r.quantity || 0) : Number(r.share || 0),
-    quantity: Number(r.quantity || 0),
-    share: Number(r.share || 0),
-  })).filter(x => x.value > 0);
+  const values = resList
+    .map(r => ({ name: r.name, quantity: Number(r.quantity || 0) }))
+    .filter(x => x.quantity > 0);
 
-  const total = values.reduce((a, b) => a + b.value, 0);
-  if (total <= 0) return `<div class="small">Resource values are all zero.</div>`;
+  if (!values.length) {
+    return `<div class="small">No resources with quantity above 0.</div>`;
+  }
+
+  const total = values.reduce((a, b) => a + b.quantity, 0);
 
   const size = 260;
   const cx = size / 2;
   const cy = size / 2;
   const radius = 100;
 
-  // Simple deterministic color palette (no external libs)
   const palette = ["#2563eb","#16a34a","#f59e0b","#ef4444","#8b5cf6","#0ea5e9","#22c55e","#a3a3a3","#e11d48","#14b8a6"];
 
   let start = -Math.PI / 2;
+
   const paths = values.map((v, idx) => {
-    const frac = v.value / total;
+    const frac = v.quantity / total;
     const end = start + frac * Math.PI * 2;
     const d = arcPath(cx, cy, radius, start, end);
     const fill = palette[idx % palette.length];
 
-    // Tooltip text content (quantity is what you asked for)
-    const tooltipText = useQuantity
-      ? `${v.name}: ${v.quantity.toLocaleString()}`
-      : `${v.name}: ${v.share.toFixed(1)}%`;
+    const tooltipText = `${v.name}: ${v.quantity.toLocaleString()}`;
 
-    const p = `
-      <path d="${d}" fill="${fill}" data-tip="${escapeHtml(tooltipText)}"></path>
-    `;
+    const p = `<path d="${d}" fill="${fill}" data-tip="${escapeHtml(tooltipText)}"></path>`;
     start = end;
     return p;
   }).join("");
 
-  // Legend
   const legend = values.map((v, idx) => {
     const fill = palette[idx % palette.length];
-    const label = useQuantity
-      ? `${v.name} — ${v.quantity.toLocaleString()}`
-      : `${v.name} — ${v.share.toFixed(1)}%`;
-    return `<div class="legendItem"><span class="legendSwatch" style="background:${fill}"></span>${escapeHtml(label)}</div>`;
+    return `<div class="legendItem"><span class="legendSwatch" style="background:${fill}"></span>${escapeHtml(v.name)}</div>`;
   }).join("");
 
-  // Wrap includes tooltip container; JS hooks are attached after render
   return `
     <div class="pieWrap" id="pieWrap">
       <svg id="pieSvg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="Resource pie chart">
@@ -324,7 +304,6 @@ function attachPieTooltipHandlers() {
     tip.textContent = text;
     tip.classList.add("show");
 
-    // Position relative to wrap
     const wrapRect = wrap.getBoundingClientRect();
     const x = e.clientX - wrapRect.left;
     const y = e.clientY - wrapRect.top;
@@ -516,7 +495,6 @@ function viewCountry(planet, planetData, country) {
           Then the site can render it.
         </p>
         ${flagHelp}
-        <p class="small">If you want, paste one example flag link here and I’ll tell you whether it’s a file link or folder link.</p>
       </div>
     </section>
 
@@ -546,7 +524,7 @@ function viewCountry(planet, planetData, country) {
           </table>
         </div>
       </div>
-      <p class="small">Pie chart uses quantities when available; otherwise it falls back to share.</p>
+      <p class="small">Pie chart includes only resources with quantity above 0. Hover slices to see quantities.</p>
     </section>
 
     <section class="card">
