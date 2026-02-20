@@ -82,11 +82,16 @@ function legendHtml() {
 }
 
 function edgeTooltipText(edge) {
+  const aName = String(edge?.aName || edge?.aId || "").trim();
+  const bName = String(edge?.bName || edge?.bId || "").trim();
   const rel = String(edge?.relationship || "").trim();
   const st = String(edge?.status || "").trim();
-  if (!rel && !st) return "";
-  if (rel && st) return `${rel} (${st})`;
-  return rel || st;
+
+  const line1 = (aName && bName) ? `${aName} → ${bName}` : "";
+  const line2 = rel ? (st ? `${rel} (${st})` : rel) : (st ? st : "");
+
+  if (line1 && line2) return `${line1}\n${line2}`;
+  return line1 || line2 || "";
 }
 
 function diplomacyWebSvgFromEdges(countries, edges) {
@@ -146,7 +151,8 @@ function attachDiplomacyTooltipHandlers() {
   if (!wrap || !svg || !tip) return;
 
   function showTip(e, text) {
-    tip.textContent = text;
+    // Convert \n to real line breaks
+    tip.innerHTML = escapeHtml(text).replaceAll("\n", "<br/>");
     tip.classList.add("show");
 
     const rect = wrap.getBoundingClientRect();
@@ -265,7 +271,7 @@ function viewPlanetLive(planet, payload) {
 
     <section class="card">
       <h3 class="sectionTitle">Diplomacy Web</h3>
-      <p class="small">Hover a line to see the relationship type.</p>
+      <p class="small">Hover a line to see: Source → Target + relationship type.</p>
       ${diplomacyWebSvgFromEdges(countries, edges)}
     </section>
 
