@@ -1,4 +1,4 @@
-import { API_BASE, PLANETS } from "./config.js";
+import { API_BASE, PLANETS, RELATIONSHIP_STYLES } from "./config.js";
 
 const nav = document.getElementById("nav");
 const app = document.getElementById("app");
@@ -72,6 +72,58 @@ function fmtSignedBillion(n) {
   return `${sign}${Math.abs(val).toLocaleString(undefined, { maximumFractionDigits: 0 })} B`;
 }
 
+/* ---------- Diplomacy Web ---------- */
+
+function legendHtml() {
+  const items = Object.entries(RELATIONSHIP_STYLES).map(([, v]) =>
+    `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
+  ).join("");
+  return `<div class="graphLegend">${items}</div>`;
+}
+
+function diplomacyWebSvgFromEdges(countries, edges) {
+  const n = countries.length;
+  if (n < 2) return `<div class="small">No diplomacy data yet for this planet.</div>`;
+
+  const W = 900;
+  const H = 520;
+  const cx = W / 2;
+  const cy = H / 2;
+  const r = Math.min(W, H) * 0.36;
+
+  const nodes = countries.map((c, i) => {
+    const angle = (Math.PI * 2 * i) / n - Math.PI / 2;
+    return { ...c, x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+  });
+
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+  const edgeLines = (edges || []).map(e => {
+    const A = nodeMap.get(e.aId);
+    const B = nodeMap.get(e.bId);
+    if (!A || !B) return "";
+    const style = RELATIONSHIP_STYLES[e.key] || RELATIONSHIP_STYLES.neutral;
+    return `<line x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}" x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
+      stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
+  }).join("");
+
+  const nodeDots = nodes.map(n => `
+    <circle class="nodeCircle" cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="18" fill="rgba(255,255,255,0.08)"></circle>
+    <circle cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="12" fill="rgba(255,255,255,0.85)"></circle>
+    <text class="nodeLabel" x="${n.x.toFixed(2)}" y="${(n.y + 34).toFixed(2)}" text-anchor="middle">${escapeHtml(n.name)}</text>
+  `).join("");
+
+  return `
+    <div class="graphWrap">
+      <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Diplomacy web">
+        ${edgeLines}
+        ${nodeDots}
+      </svg>
+    </div>
+    ${legendHtml()}
+  `;
+}
+
 /* ---------- Views ---------- */
 
 function viewChoosePlanetSkeleton() {
@@ -143,6 +195,7 @@ function rankingsTable(title, rows, fmtFn) {
 function viewPlanetLive(planet, payload) {
   const countries = Array.isArray(payload?.countries) ? payload.countries : [];
   const rankings = payload?.rankings || {};
+  const edges = payload?.diplomacy?.edges || [];
 
   const countryLinks = countries.length
     ? countries.map(c => {
@@ -162,6 +215,11 @@ function viewPlanetLive(planet, payload) {
           <button onclick="location.hash='#/'">Change Planet</button>
         </div>
       </div>
+    </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">Diplomacy Web</h3>
+      ${diplomacyWebSvgFromEdges(countries, edges)}
     </section>
 
     <section class="card">
@@ -190,7 +248,6 @@ function viewError(err) {
     <section class="card">
       <h2>Page error</h2>
       <p class="small">${escapeHtml(err?.message || String(err))}</p>
-      <p class="small"><code>${escapeHtml(String(err?.stack || ""))}</code></p>
       <p><a class="inline" href="#/">Back</a></p>
     </section>
   `;
@@ -232,7 +289,6 @@ async function render() {
   }
 
   if (path === "/country") {
-    // Step 4 will implement this with API view=country
     setNav(findPlanet(params.get("planet")) || getDefaultPlanet());
     app.innerHTML = `
       <section class="card">
