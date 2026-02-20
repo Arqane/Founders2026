@@ -72,13 +72,21 @@ function fmtSignedBillion(n) {
   return `${sign}${Math.abs(val).toLocaleString(undefined, { maximumFractionDigits: 0 })} B`;
 }
 
-/* ---------- Diplomacy Web ---------- */
+/* ---------- Diplomacy Web + Tooltip ---------- */
 
 function legendHtml() {
   const items = Object.entries(RELATIONSHIP_STYLES).map(([, v]) =>
     `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
   ).join("");
   return `<div class="graphLegend">${items}</div>`;
+}
+
+function edgeTooltipText(edge) {
+  const rel = String(edge?.relationship || "").trim();
+  const st = String(edge?.status || "").trim();
+  if (!rel && !st) return "";
+  if (rel && st) return `${rel} (${st})`;
+  return rel || st;
 }
 
 function diplomacyWebSvgFromEdges(countries, edges) {
@@ -103,7 +111,13 @@ function diplomacyWebSvgFromEdges(countries, edges) {
     const B = nodeMap.get(e.bId);
     if (!A || !B) return "";
     const style = RELATIONSHIP_STYLES[e.key] || RELATIONSHIP_STYLES.neutral;
-    return `<line x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}" x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
+
+    const tip = edgeTooltipText(e);
+    const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
+
+    return `<line class="dipEdge" ${tipAttr}
+      x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
+      x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
       stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
   }).join("");
 
@@ -114,14 +128,46 @@ function diplomacyWebSvgFromEdges(countries, edges) {
   `).join("");
 
   return `
-    <div class="graphWrap">
-      <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Diplomacy web">
+    <div class="graphWrap" id="dipWrap">
+      <svg id="dipSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Diplomacy web">
         ${edgeLines}
         ${nodeDots}
       </svg>
+      <div class="dipTooltip" id="dipTooltip"></div>
     </div>
     ${legendHtml()}
   `;
+}
+
+function attachDiplomacyTooltipHandlers() {
+  const wrap = document.getElementById("dipWrap");
+  const svg = document.getElementById("dipSvg");
+  const tip = document.getElementById("dipTooltip");
+  if (!wrap || !svg || !tip) return;
+
+  function showTip(e, text) {
+    tip.textContent = text;
+    tip.classList.add("show");
+
+    const rect = wrap.getBoundingClientRect();
+    tip.style.left = `${e.clientX - rect.left}px`;
+    tip.style.top = `${e.clientY - rect.top}px`;
+  }
+
+  function hideTip() {
+    tip.classList.remove("show");
+  }
+
+  svg.addEventListener("mousemove", (e) => {
+    const t = e.target;
+    if (t && t.classList && t.classList.contains("dipEdge") && t.dataset?.tip) {
+      showTip(e, t.dataset.tip);
+    } else {
+      hideTip();
+    }
+  });
+
+  svg.addEventListener("mouseleave", hideTip);
 }
 
 /* ---------- Views ---------- */
@@ -219,6 +265,7 @@ function viewPlanetLive(planet, payload) {
 
     <section class="card">
       <h3 class="sectionTitle">Diplomacy Web</h3>
+      <p class="small">Hover a line to see the relationship type.</p>
       ${diplomacyWebSvgFromEdges(countries, edges)}
     </section>
 
@@ -281,6 +328,7 @@ async function render() {
       const payload = await fetchPlanetLive(planet.id);
       if (!payload?.ok) throw new Error(payload?.error || "API returned ok=false");
       app.innerHTML = viewPlanetLive(planet, payload);
+      attachDiplomacyTooltipHandlers();
     } catch (err) {
       console.error(err);
       app.innerHTML = viewError(err);
@@ -293,7 +341,7 @@ async function render() {
     app.innerHTML = `
       <section class="card">
         <h2 class="heroTitle">Country page (next step)</h2>
-        <p class="small">Step 4 will make this live: demonym, motto, flagPublicUrl, resources (Y:BN), diplomacy, etc.</p>
+        <p class="small">Next: live flagPublicUrl, resources (Y:BN), demonym, motto, etc.</p>
         <p><a class="inline" href="#/">Back</a></p>
       </section>
     `;
