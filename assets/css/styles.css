@@ -10,9 +10,9 @@ body { margin: 0; background: #f6f7fb; color: #111; }
   align-items:center;
   justify-content: space-between;
 }
-.topbar h1 { font-size: 18px; margin: 0; }
+.brand { font-size: 18px; margin: 0; }
 
-.nav { display:flex; gap:12px; }
+.nav { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
 .nav a {
   color:#fff;
   text-decoration:none;
@@ -27,11 +27,15 @@ body { margin: 0; background: #f6f7fb; color: #111; }
 
 .card {
   background: #fff;
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 16px;
   box-shadow: 0 2px 12px rgba(0,0,0,.06);
   margin-bottom: 16px;
 }
+
+.hstack { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.vstack { display:flex; flex-direction:column; gap:10px; }
+
 .buttonRow { display:flex; flex-wrap:wrap; gap:10px; }
 button {
   padding: 10px 12px;
@@ -43,10 +47,43 @@ button {
 button:hover { background:#f0f2f7; }
 
 .table { width:100%; border-collapse: collapse; }
-.table th, .table td { border:1px solid #e6e6e6; padding: 8px; text-align:center; }
+.table th, .table td { border:1px solid #e6e6e6; padding: 8px; text-align:left; }
+.table th { background:#fafafa; }
+.table td.num, .table th.num { text-align:right; }
 
 .badge { display:inline-block; padding: 2px 8px; border-radius: 999px; background:#eee; font-size: 12px; }
 .small { font-size: 12px; color:#444; }
 
 a.inline { color:#0b57d0; text-decoration:none; }
 a.inline:hover { text-decoration:underline; }
+
+.grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+
+.heroTitle { margin: 0 0 6px 0; font-size: 22px; }
+.sectionTitle { margin: 0 0 10px 0; font-size: 16px; }
+
+.flag {
+  width: 140px;
+  height: 84px;
+  border-radius: 10px;
+  border: 1px solid #e6e6e6;
+  background: #fff;
+  object-fit: cover;
+}
+
+.graphWrap {
+  width: 100%;
+  overflow: auto;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  background: radial-gradient(circle at 50% 40%, #1a1a1a, #0b0b0b);
+  padding: 10px;
+}
+
+.graphLegend { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+.legendItem { display:flex; gap:8px; align-items:center; font-size: 12px; color:#333; }
+.legendSwatch { width:16px; height:3px; border-radius: 999px; background:#999; }
+
+.nodeLabel { font-size: 12px; fill: #fff; opacity: 0.95; }
+.nodeCircle { stroke: rgba(255,255,255,.35); stroke-width: 2; }
