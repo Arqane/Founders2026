@@ -3,13 +3,11 @@ import { PLANETS, RELATIONSHIP_STYLES } from "./config.js";
 const nav = document.getElementById("nav");
 const app = document.getElementById("app");
 
-// If these don’t exist, render can’t work.
-if (!nav || !app) {
-  // eslint-disable-next-line no-console
-  console.error("Missing #nav or #app element in index.html");
-}
+if (!nav || !app) console.error("Missing #nav or #app element in index.html");
 
 const planetDataCache = new Map();
+
+/* ---------- Routing ---------- */
 
 function parseRoute() {
   const hash = window.location.hash || "#/";
@@ -33,7 +31,6 @@ function setNav(planet = null) {
   const planetCrumb = planet
     ? `<a href="#/planet?planet=${encodeURIComponent(planet.id)}">${planet.label}</a>`
     : "";
-
   nav.innerHTML = `
     <a href="#/">Choose Planet</a>
     ${planetCrumb}
@@ -71,21 +68,17 @@ function fmtSignedBillion(n) {
 function planetCountries(planetData) {
   return Array.isArray(planetData?.countries) ? planetData.countries : [];
 }
-
 function countryById(planetData, id) {
   return planetCountries(planetData).find(c => c.id === id) || null;
 }
-
 function buildRankings(planetData, key, direction = "desc") {
   const rows = planetCountries(planetData)
     .map(c => ({ id: c.id, name: c.name, value: c.indicators?.[key] }))
     .filter(r => r.value !== null && r.value !== undefined && r.value !== "");
-
   rows.sort((a, b) => {
     const av = Number(a.value), bv = Number(b.value);
     return direction === "asc" ? (av - bv) : (bv - av);
   });
-
   return rows;
 }
 
@@ -96,23 +89,16 @@ function normalizeDriveImageUrl(url) {
   const s = String(url).trim();
 
   let id = null;
-
-  // file/d/<ID>/...
   let m = s.match(/drive\.google\.com\/file\/d\/([^/]+)\//i);
   if (m?.[1]) id = m[1];
 
-  // ?id=<ID>
   if (!id) {
     m = s.match(/[?&]id=([^&]+)/i);
     if (m?.[1]) id = m[1];
   }
 
-  // Folder links won’t render in <img>
   if (!id && /drive\.google\.com\/drive\/folders\//i.test(s)) return s;
-
-  // Raw ID fallback
   if (!id && /^[a-zA-Z0-9_-]{20,}$/.test(s)) id = s;
-
   if (!id) return s;
 
   return `https://drive.google.com/uc?export=view&id=${id}`;
@@ -122,7 +108,6 @@ function normalizeDriveImageUrl(url) {
 
 async function ensurePlanetLoaded(planet) {
   if (!planet) return { countries: [] };
-
   if (planetDataCache.has(planet.id)) return planetDataCache.get(planet.id);
 
   if (!planet.dataFile) {
@@ -133,11 +118,10 @@ async function ensurePlanetLoaded(planet) {
 
   const res = await fetch(planet.dataFile, { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load ${planet.dataFile}: ${res.status}`);
-
   const json = await res.json();
 
-  // Prefer flagPublicUrl (your Column H export) if present
   json.countries = (json.countries || []).map(c => {
+    // Prefer Column H export
     const rawFlag =
       c.flagPublicUrl ||
       c.flagUrl ||
@@ -167,7 +151,6 @@ function legendHtml() {
 function diplomacyWebSvg(planetData) {
   const countries = planetCountries(planetData);
   const n = countries.length;
-
   if (n < 2) return `<div class="small">No diplomacy data yet for this planet.</div>`;
 
   const W = 900;
@@ -192,9 +175,7 @@ function diplomacyWebSvg(planetData) {
       const key = [a.id, bId].sort().join("|");
       if (seen.has(key)) continue;
       seen.add(key);
-
-      const relKey = meta?.key || "neutral";
-      edges.push({ a: a.id, b: bId, relKey });
+      edges.push({ a: a.id, b: bId, relKey: meta?.key || "neutral" });
     }
   }
 
@@ -223,7 +204,7 @@ function diplomacyWebSvg(planetData) {
   `;
 }
 
-/* ---------- Pie chart (quantity > 0, legend names only, tooltip quantity) ---------- */
+/* ---------- Pie chart (ALL quantity > 0, unlimited colors) ---------- */
 
 function arcPath(cx, cy, r, startAngle, endAngle) {
   const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
@@ -238,6 +219,12 @@ function arcPath(cx, cy, r, startAngle, endAngle) {
     `A ${r} ${r} 0 ${largeArc} 1 ${x2.toFixed(3)} ${y2.toFixed(3)}`,
     "Z"
   ].join(" ");
+}
+
+function sliceColor(i, n) {
+  // Evenly distribute hues; stable + supports any n
+  const hue = Math.round((360 * i) / Math.max(1, n));
+  return `hsl(${hue} 70% 50%)`;
 }
 
 function resourcePieChartHtml(country) {
@@ -257,22 +244,21 @@ function resourcePieChartHtml(country) {
   const cy = size / 2;
   const radius = 100;
 
-  const palette = ["#2563eb","#16a34a","#f59e0b","#ef4444","#8b5cf6","#0ea5e9","#22c55e","#a3a3a3","#e11d48","#14b8a6"];
-
   let start = -Math.PI / 2;
 
   const paths = values.map((v, idx) => {
     const frac = v.quantity / total;
     const end = start + frac * Math.PI * 2;
     const d = arcPath(cx, cy, radius, start, end);
-    const fill = palette[idx % palette.length];
+    const fill = sliceColor(idx, values.length);
     const tooltipText = `${v.name}: ${v.quantity.toLocaleString()}`;
     start = end;
     return `<path d="${d}" fill="${fill}" data-tip="${escapeHtml(tooltipText)}"></path>`;
   }).join("");
 
+  // Legend: names only (no quantities)
   const legend = values.map((v, idx) => {
-    const fill = palette[idx % palette.length];
+    const fill = sliceColor(idx, values.length);
     return `<div class="legendItem"><span class="legendSwatch" style="background:${fill}"></span>${escapeHtml(v.name)}</div>`;
   }).join("");
 
@@ -299,12 +285,9 @@ function attachPieTooltipHandlers() {
   function showTip(e, text) {
     tip.textContent = text;
     tip.classList.add("show");
-
-    const wrapRect = wrap.getBoundingClientRect();
-    const x = e.clientX - wrapRect.left;
-    const y = e.clientY - wrapRect.top;
-    tip.style.left = `${x}px`;
-    tip.style.top = `${y}px`;
+    const rect = wrap.getBoundingClientRect();
+    tip.style.left = `${e.clientX - rect.left}px`;
+    tip.style.top = `${e.clientY - rect.top}px`;
   }
 
   function hideTip() {
@@ -313,7 +296,7 @@ function attachPieTooltipHandlers() {
 
   svg.addEventListener("mousemove", (e) => {
     const t = e.target;
-    if (t && t.tagName === "path" && t.dataset && t.dataset.tip) showTip(e, t.dataset.tip);
+    if (t && t.tagName === "path" && t.dataset?.tip) showTip(e, t.dataset.tip);
     else hideTip();
   });
 
@@ -330,7 +313,7 @@ function viewChoosePlanet() {
   return `
     <section class="card">
       <h2 class="heroTitle">Choose a Planet</h2>
-      <p class="small">If this page is blank, open DevTools → Console for an error.</p>
+      <p class="small">If flags/resources look wrong, your JSON export is missing fields.</p>
       <div class="buttonRow">${buttons}</div>
     </section>
   `;
@@ -449,11 +432,10 @@ function viewCountry(planet, planetData, country) {
     .map(r => {
       const qty = (r.quantity !== null && r.quantity !== undefined) ? Number(r.quantity) : null;
       const qtyCell = (qty !== null && !Number.isNaN(qty)) ? qty.toLocaleString() : "—";
-      const shareCell = (r.share !== null && r.share !== undefined && r.share !== "") ? `${Number(r.share).toFixed(1)}%` : "—";
       return `<tr>
         <td>${escapeHtml(r.name)}</td>
         <td>${escapeHtml(r.type || "Resource")}</td>
-        <td class="num">${shareCell}</td>
+        <td class="num">${(Number(r.share) || 0).toFixed(1)}%</td>
         <td class="num">${qtyCell}</td>
       </tr>`;
     })
@@ -478,7 +460,10 @@ function viewCountry(planet, planetData, country) {
       </div>
 
       <div id="flagError" style="display:none; margin-top:10px;">
-        <p class="small"><strong>Flag didn’t load.</strong> This will be fixed once your JSON includes the copied public link (Column H) as <code>flagPublicUrl</code>.</p>
+        <p class="small">
+          <strong>Flag didn’t load.</strong>
+          Your JSON must include the copied public link in <code>flagPublicUrl</code> (export it from Client Registry column H).
+        </p>
       </div>
     </section>
 
@@ -520,11 +505,10 @@ function viewCountry(planet, planetData, country) {
   `;
 }
 
-/* ---------- Router (async) ---------- */
+/* ---------- Render ---------- */
 
 async function render() {
   const { path, params } = parseRoute();
-
   if (!nav || !app) return;
 
   if (path === "/" || path === "") {
@@ -534,51 +518,40 @@ async function render() {
   }
 
   if (path === "/planet") {
-    const planetParam = params.get("planet");
-    const planet = findPlanet(planetParam) || getDefaultPlanet();
+    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
     setNav(planet);
-
     app.innerHTML = `<section class="card"><h2 class="heroTitle">Loading ${planet.label}…</h2><p class="small">Fetching planet data.</p></section>`;
     const planetData = await ensurePlanetLoaded(planet);
-
     app.innerHTML = viewPlanet(planet, planetData);
     return;
   }
 
   if (path === "/country") {
-    const planetParam = params.get("planet");
+    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
     const countryId = params.get("country");
-    const planet = findPlanet(planetParam) || getDefaultPlanet();
     setNav(planet);
-
     app.innerHTML = `<section class="card"><h2 class="heroTitle">Loading ${planet.label}…</h2><p class="small">Fetching planet data.</p></section>`;
     const planetData = await ensurePlanetLoaded(planet);
-
     const country = countryById(planetData, countryId);
     app.innerHTML = viewCountry(planet, planetData, country);
-
     attachPieTooltipHandlers();
     return;
   }
 
-  // fallback
   setNav(null);
   app.innerHTML = viewChoosePlanet();
 }
 
 function showError(err) {
-  // eslint-disable-next-line no-console
   console.error(err);
-  if (!app) return;
   app.innerHTML = `
     <section class="card">
       <h2>Site error</h2>
       <p class="small">${escapeHtml(err?.message || String(err))}</p>
-      <p class="small">Open DevTools → Console for the stack trace.</p>
       <p><a class="inline" href="#/">Back to Choose Planet</a></p>
     </section>
   `;
 }
 
-window.addEventListener("hashchange", () => { render().catch(showError); });
+window.addEventListener("hashchange", () => render().catch(showError));
 render().catch(showError);
