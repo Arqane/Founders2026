@@ -1,0 +1,160 @@
+{
+  "planetId": "test",
+  "planetLabel": "TEST",
+  "currentYear": "Y3",
+  "yearSheet": "Year 3",
+  "countries": [
+    {
+      "id": "jeff",
+      "name": "Jeff",
+      "demonym": "Jeffians",
+      "motto": "Omnes benigne recipiuntur, omnes laborare, omnes vivere possunt. (All are welcome, all can work, all can live.)",
+      "flagUrl": "https://drive.google.com/file/d/1UgjdaC3u0oDTD2bAvPbEBhxwU-UnpqHH/view?usp=sharing",
+      "resources": [
+        { "name": "Gems", "type": "Resource", "share": 24.2, "quantity": 160.0 },
+        { "name": "Iron", "type": "Resource", "share": 24.2, "quantity": 160.0 },
+        { "name": "Plastics", "type": "Resource", "share": 22.7, "quantity": 150.0 },
+        { "name": "Tea", "type": "Resource", "share": 12.1, "quantity": 80.0 },
+        { "name": "Machinery", "type": "Resource", "share": 9.1, "quantity": 60.0 },
+        { "name": "Textiles", "type": "Resource", "share": 7.6, "quantity": 50.0 }
+      ],
+      "indicators": {
+        "rGDP": 4111.828593032187,
+        "unemployment": 5.005783194444445,
+        "inflation": 2.9421680555555487,
+        "exports": 0.0,
+        "imports": 0.0,
+        "tradeBalance": 0.0,
+        "population": 151702952.40200096,
+        "rGDPpc": 27104.4731030426
+      },
+      "diplomacy": {
+        "mycah": { "relationship": "Integrated Defense Alliance", "status": "Patron", "key": "ally" }
+      }
+    },
+    {
+      "id": "mycah",
+      "name": "Mycah",
+      "demonym": "Mycans",
+      "motto": "Constructum animo, Ducente Proposito.",
+      "flagUrl": "https://drive.google.com/file/d/1fx91ZQ2KA0lD1msFhJ5bGGCZrYxS4u8U/view?usp=sharing",
+      "resources": [
+        { "name": "Rubber", "type": "Resource", "share": 33.5, "quantity": 310.0 },
+        { "name": "Fish", "type": "Resource", "share": 20.0, "quantity": 185.0 },
+        { "name": "Oil", "type": "Resource", "share": 17.8, "quantity": 165.0 },
+        { "name": "Gems", "type": "Resource", "share": 10.8, "quantity": 100.0 },
+        { "name": "Uranium", "type": "Resource", "share": 9.7, "quantity": 90.0 },
+        { "name": "Wool", "type": "Resource", "share": 8.1, "quantity": 75.0 }
+      ],
+      "indicators": {
+        "rGDP": 1352.749121974499,
+        "unemployment": 0.0,
+        "inflation": 2.9436944444444557,
+        "exports": 0.0,
+        "imports": 0.0,
+        "tradeBalance": 0.0,
+        "population": 0.0,
+        "rGDPpc": null
+      },
+      "diplomacy": {
+        "goof-grand-oligrachy-of-franklin": { "relationship": "Integrated Defense Alliance", "status": "Client", "key": "ally" },
+        "jeff": { "relationship": "Integrated Defense Alliance", "status": "Client", "key": "ally" },
+        "the-faoa": { "relationship": "Integrated Defense Alliance", "status": "Client", "key": "ally" },
+        "wakinda": { "relationship": "Puppet State", "status": "Client", "key": "rival" }
+      }
+    },
+    {
+      "id": "the-faoa",
+      "name": "The FAOA",
+      "demonym": "Biggies",
+      "motto": "Comedite et beati (Eat and be happy)",
+      "flagUrl": "https://drive.google.com/file/d/1PcnP4pbLEiZIL0l-gT6H6wN_Sj7vE-7S/view?usp=sharing",
+      "resources": [
+        { "name": "Gems", "type": "Resource", "share": 26.2, "quantity": 230.0 },
+        { "name": "Iron", "type": "Resource", "share": 23.9, "quantity": 210.0 },
+        { "name": "Machinery", "type": "Resource", "share": 16.0, "quantity": 140.0 },
+        { "name": "Glass", "type": "Resource", "share": 12.6, "quantity": 110.0 },
+        { "name": "Electronics", "type": "Resource", "share": 9.6, "quantity": 84.0 },
+        { "name": "Tools", "type": "Resource", "share": 11.8, "quantity": 104.0 }
+      ],
+      "indicators": {
+        "rGDP": 1506.561592112953,
+        "unemployment": 0.0,
+        "inflation": 2.9436111111111204,
+        "exports": 0.0,
+        "imports": 0.0,
+        "tradeBalance": 0.0,
+        "population": 0.0,
+        "rGDPpc": null
+      },
+      "diplomacy": {
+        "goof-grand-oligrachy-of-franklin": { "relationship": "Integrated Defense Alliance", "status": "Client", "key": "ally" },
+        "jeff": { "relationship": "Integrated Defense Alliance", "status": "Client", "key": "ally" },
+        "mycah": { "relationship": "Integrated Defense Alliance", "status": "Patron", "key": "ally" },
+        "wakinda": { "relationship": "Puppet State", "status": "Client", "key": "rival" }
+      }
+    },
+    {
+      "id": "wakinda",
+      "name": "Wakinda",
+      "demonym": "Wakindians",
+      "motto": "Scisne me septemdecim centesimis Africanum esse?",
+      "flagUrl": "https://drive.google.com/file/d/1Z7gUgNA6hIwlYlLrQ44o5w7vulx9pVRL/view?usp=sharing",
+      "resources": [
+        { "name": "Rubber", "type": "Resource", "share": 28.8, "quantity": 310.0 },
+        { "name": "Uranium", "type": "Resource", "share": 15.3, "quantity": 165.0 },
+        { "name": "Tea", "type": "Resource", "share": 14.8, "quantity": 160.0 },
+        { "name": "Fish", "type": "Resource", "share": 11.1, "quantity": 120.0 },
+        { "name": "Glass", "type": "Resource", "share": 10.2, "quantity": 110.0 },
+        { "name": "Gems", "type": "Resource", "share": 19.8, "quantity": 214.0 }
+      ],
+      "indicators": {
+        "rGDP": 3711.635522250308,
+        "unemployment": 0.0,
+        "inflation": 2.9423611111111134,
+        "exports": 0.0,
+        "imports": 0.0,
+        "tradeBalance": 0.0,
+        "population": 0.0,
+        "rGDPpc": null
+      },
+      "diplomacy": {
+        "goof-grand-oligrachy-of-franklin": { "relationship": "Integrated Defense Alliance", "status": "Client", "key": "ally" },
+        "jeff": { "relationship": "Integrated Defense Alliance", "status": "Client", "key": "ally" },
+        "mycah": { "relationship": "Integrated Defense Alliance", "status": "Patron", "key": "ally" },
+        "the-faoa": { "relationship": "Puppet State", "status": "Patron", "key": "rival" }
+      }
+    },
+    {
+      "id": "goof-grand-oligrachy-of-franklin",
+      "name": "GOOF (Grand Oligrachy of Franklin)",
+      "demonym": "Goofians",
+      "motto": "Communismus, secundus post capitalismum (Communism, second after capitalism)",
+      "flagUrl": "https://drive.google.com/file/d/13tVDHVgIDDEL7U3j5QHk8xN7aR8v1e5h/view?usp=sharing",
+      "resources": [
+        { "name": "Sugar", "type": "Resource", "share": 30.5, "quantity": 250.0 },
+        { "name": "Rubber", "type": "Resource", "share": 20.0, "quantity": 165.0 },
+        { "name": "Gems", "type": "Resource", "share": 16.1, "quantity": 132.0 },
+        { "name": "Fish", "type": "Resource", "share": 14.6, "quantity": 120.0 },
+        { "name": "Wool", "type": "Resource", "share": 7.3, "quantity": 60.0 },
+        { "name": "Tools", "type": "Resource", "share": 11.5, "quantity": 94.0 }
+      ],
+      "indicators": {
+        "rGDP": 4749.017686822323,
+        "unemployment": 0.0,
+        "inflation": 2.9418055555555607,
+        "exports": 0.0,
+        "imports": 0.0,
+        "tradeBalance": 0.0,
+        "population": 0.0,
+        "rGDPpc": null
+      },
+      "diplomacy": {
+        "jeff": { "relationship": "Integrated Defense Alliance", "status": "Client", "key": "ally" },
+        "mycah": { "relationship": "Integrated Defense Alliance", "status": "Client", "key": "ally" },
+        "the-faoa": { "relationship": "Integrated Defense Alliance", "status": "Client", "key": "ally" },
+        "wakinda": { "relationship": "Integrated Defense Alliance", "status": "Client", "key": "ally" }
+      }
+    }
+  ]
+}
