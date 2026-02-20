@@ -1,25 +1,22 @@
-export const PLANETS = [
-  // TEST: first to integrate
-  {
-    id: "test",
-    label: "TEST",
-    dataFile: "./assets/data/test.json",   // <-- NEW
-    diplomacySource: null,
-    dataLogSource: null,
-    countries: null                        // <-- will be filled after fetch
-  },
+// assets/js/config.js
 
-  // Real planets (wire later)
-  { id: "parallax", label: "Parallax", dataFile: null, diplomacySource: null, dataLogSource: null, countries: null },
-  { id: "cyqs",     label: "Cyq’s",     dataFile: null, diplomacySource: null, dataLogSource: null, countries: null },
-  { id: "sevyr",    label: "Sevyr",     dataFile: null, diplomacySource: null, dataLogSource: null, countries: null },
-  { id: "octavium", label: "Octavium",  dataFile: null, diplomacySource: null, dataLogSource: null, countries: null },
+export const API_BASE =
+  "https://script.google.com/macros/s/AKfycbwZ-QIjMGQsmeS_z8WDtzndBcJ5XfsYPPoMsINuVPBAo0zm3TK7rDq4CaRNynTB1Unm/exec";
+
+// Planets (we’ll still use this nav structure; the data will come from the API)
+export const PLANETS = [
+  { id: "test", label: "TEST" },
+  { id: "parallax", label: "Parallax" },
+  { id: "cyqs", label: "Cyq`s" },
+  { id: "sevyr", label: "Sevyr" },
+  { id: "octavium", label: "Octavium" },
 ];
 
+// Diplomacy relationship styles (adjust as needed)
 export const RELATIONSHIP_STYLES = {
-  ally:     { label: "Allies",   color: "#3b82f6" }, // blue
-  rival:    { label: "Rivalry",  color: "#f59e0b" }, // orange
-  enemy:    { label: "Enemy",    color: "#ef4444" }, // red
-  neutral:  { label: "Neutral",  color: "#a3a3a3" }, // gray
-  friendly: { label: "Friendly", color: "#22c55e" }, // green
+  ally: { label: "Ally", color: "#16a34a" },
+  friendly: { label: "Friendly", color: "#22c55e" },
+  neutral: { label: "Neutral", color: "#6b7280" },
+  tense: { label: "Tense", color: "#f59e0b" },
+  hostile: { label: "Hostile", color: "#ef4444" },
 };
