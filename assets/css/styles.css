@@ -87,3 +87,32 @@ a.inline:hover { text-decoration:underline; }
 
 .nodeLabel { font-size: 12px; fill: #fff; opacity: 0.95; }
 .nodeCircle { stroke: rgba(255,255,255,.35); stroke-width: 2; }
+
+/* ----- Pie chart + tooltip ----- */
+
+.pieWrap {
+  position: relative;
+  display: inline-block;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+}
+
+.pieTooltip {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, -120%);
+  padding: 6px 8px;
+  background: rgba(17,17,17,0.92);
+  color: #fff;
+  border-radius: 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0,0,0,.15);
+  opacity: 0;
+  transition: opacity 80ms linear;
+}
+
+.pieTooltip.show { opacity: 1; }
+.pieHint { margin-top: 8px; }
