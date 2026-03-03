@@ -151,7 +151,6 @@ function attachDiplomacyTooltipHandlers() {
   if (!wrap || !svg || !tip) return;
 
   function showTip(e, text) {
-    // Convert \n to real line breaks
     tip.innerHTML = escapeHtml(text).replaceAll("\n", "<br/>");
     tip.classList.add("show");
 
@@ -194,19 +193,15 @@ function viewChoosePlanetSkeleton() {
 }
 
 function renderApiStatusOk(payload) {
-  const sheetList = Array.isArray(payload?.sheets) ? payload.sheets : [];
-  const firstFew = sheetList.slice(0, 12);
-  const more = sheetList.length > firstFew.length ? ` (+${sheetList.length - firstFew.length} more)` : "";
+  const planets = Array.isArray(payload?.availablePlanets) ? payload.availablePlanets : [];
+  const planetsLine = planets.length ? planets.join(", ") : "—";
 
   return `
     <div class="card" style="box-shadow:none; border:1px solid #e5e7eb;">
       <h3 style="margin:0 0 6px 0;">Live data connected ✅</h3>
       <div class="small">Project: <strong>${escapeHtml(payload.project || "—")}</strong></div>
       <div class="small">Timestamp: ${escapeHtml(payload.timestamp || "—")}</div>
-      <div style="margin-top:10px;">
-        <div class="small"><strong>Sheets detected</strong>${more}:</div>
-        <div class="small" style="margin-top:6px;">${escapeHtml(firstFew.join(", "))}</div>
-      </div>
+      <div class="small">Planets: ${escapeHtml(planetsLine)}</div>
     </div>
   `;
 }
@@ -262,6 +257,7 @@ function viewPlanetLive(planet, payload) {
         <div>
           <h2 class="heroTitle">${escapeHtml(planet.label)}</h2>
           <div class="small">Live from API • Year ${escapeHtml(payload.year)}</div>
+          <div class="small">PlanetId: <code>${escapeHtml(payload.planetId || planet.id)}</code> • Sheet: <code>${escapeHtml(payload.spreadsheetId || "—")}</code></div>
         </div>
         <div class="buttonRow">
           <button onclick="location.hash='#/'">Change Planet</button>
