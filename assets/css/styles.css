@@ -136,3 +136,10 @@ a.inline:hover { text-decoration:underline; }
 }
 
 .dipTooltip.show { opacity: 1; }
+
+.dipNode { cursor: pointer; }
+.dipNode.focused .nodeDot { stroke: rgba(255,255,255,0.9); stroke-width: 3; }
+
+.dim { opacity: 0.10 !important; }
+
+.dipTooltip { pointer-events: none; } /* prevents tooltip “stealing” hover */
