@@ -1,3 +1,4 @@
+// assets/js/app.js
 import { API_BASE, PLANETS, RELATIONSHIP_STYLES } from "./config.js";
 
 const nav = document.getElementById("nav");
@@ -21,7 +22,11 @@ function parseRoute() {
 function findPlanet(planetIdOrLabel) {
   if (!planetIdOrLabel) return null;
   const key = planetIdOrLabel.toLowerCase();
-  return PLANETS.find(p => p.id === key) || PLANETS.find(p => p.label.toLowerCase() === key) || null;
+  return (
+    PLANETS.find(p => p.id === key) ||
+    PLANETS.find(p => p.label.toLowerCase() === key) ||
+    null
+  );
 }
 
 function getDefaultPlanet() {
@@ -47,11 +52,14 @@ async function fetchJson(url) {
 }
 
 async function fetchApiHealth() {
-  return fetchJson(API_BASE);
+  // Add nocache to help while debugging deployments
+  const url = `${API_BASE}?nocache=1`;
+  return fetchJson(url);
 }
 
 async function fetchPlanetLive(planetId) {
-  const url = `${API_BASE}?view=planet&planet=${encodeURIComponent(planetId)}`;
+  // Year comes from API (current-year aware). We also add nocache.
+  const url = `${API_BASE}?view=planet&planet=${encodeURIComponent(planetId)}&nocache=1`;
   return fetchJson(url);
 }
 
@@ -75,9 +83,11 @@ function fmtSignedBillion(n) {
 /* ---------- Diplomacy Web + Tooltip ---------- */
 
 function legendHtml() {
-  const items = Object.entries(RELATIONSHIP_STYLES).map(([, v]) =>
-    `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
-  ).join("");
+  const items = Object.entries(RELATIONSHIP_STYLES)
+    .map(([, v]) =>
+      `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
+    )
+    .join("");
   return `<div class="graphLegend">${items}</div>`;
 }
 
@@ -87,8 +97,8 @@ function edgeTooltipText(edge) {
   const rel = String(edge?.relationship || "").trim();
   const st = String(edge?.status || "").trim();
 
-  const line1 = (aName && bName) ? `${aName} → ${bName}` : "";
-  const line2 = rel ? (st ? `${rel} (${st})` : rel) : (st ? st : "");
+  const line1 = aName && bName ? `${aName} → ${bName}` : "";
+  const line2 = rel ? (st ? `${rel} (${st})` : rel) : st ? st : "";
 
   if (line1 && line2) return `${line1}\n${line2}`;
   return line1 || line2 || "";
@@ -111,32 +121,39 @@ function diplomacyWebSvgFromEdges(countries, edges) {
 
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
-  const edgeLines = (edges || []).map(e => {
-    const A = nodeMap.get(e.aId);
-    const B = nodeMap.get(e.bId);
-    if (!A || !B) return "";
-    const style = RELATIONSHIP_STYLES[e.key] || RELATIONSHIP_STYLES.neutral;
+  const edgeLines = (edges || [])
+    .map(e => {
+      const A = nodeMap.get(e.aId);
+      const B = nodeMap.get(e.bId);
+      if (!A || !B) return "";
+      const style = RELATIONSHIP_STYLES[e.key] || RELATIONSHIP_STYLES.neutral;
 
-    const tip = edgeTooltipText(e);
-    const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
+      const tip = edgeTooltipText(e);
+      const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
 
-    return `<line class="dipEdge" ${tipAttr}
-      x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
-      x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
-      stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
-  }).join("");
+      return `<line class="dipEdge" ${tipAttr}
+        data-aid="${escapeHtml(e.aId)}" data-bid="${escapeHtml(e.bId)}"
+        x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
+        x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
+        stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
+    })
+    .join("");
 
-  const nodeDots = nodes.map(n => `
-    <circle class="nodeCircle" cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="18" fill="rgba(255,255,255,0.08)"></circle>
-    <circle cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="12" fill="rgba(255,255,255,0.85)"></circle>
-    <text class="nodeLabel" x="${n.x.toFixed(2)}" y="${(n.y + 34).toFixed(2)}" text-anchor="middle">${escapeHtml(n.name)}</text>
-  `).join("");
+  const nodeGroups = nodes
+    .map(n => `
+      <g class="dipNode" data-id="${escapeHtml(n.id)}">
+        <circle class="nodeCircle" cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="18" fill="rgba(255,255,255,0.08)"></circle>
+        <circle class="nodeDot" cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="12" fill="rgba(255,255,255,0.85)"></circle>
+        <text class="nodeLabel" x="${n.x.toFixed(2)}" y="${(n.y + 34).toFixed(2)}" text-anchor="middle">${escapeHtml(n.name)}</text>
+      </g>
+    `)
+    .join("");
 
   return `
     <div class="graphWrap" id="dipWrap">
       <svg id="dipSvg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Diplomacy web">
         ${edgeLines}
-        ${nodeDots}
+        ${nodeGroups}
       </svg>
       <div class="dipTooltip" id="dipTooltip"></div>
     </div>
@@ -175,12 +192,66 @@ function attachDiplomacyTooltipHandlers() {
   svg.addEventListener("mouseleave", hideTip);
 }
 
+// NEW: click-to-focus connections; click the same node again to reset
+function attachDiplomacyFocusHandlers() {
+  const svg = document.getElementById("dipSvg");
+  if (!svg) return;
+
+  let focusedId = null;
+
+  function applyFocus() {
+    const edges = Array.from(svg.querySelectorAll(".dipEdge"));
+    const nodes = Array.from(svg.querySelectorAll(".dipNode"));
+
+    if (!focusedId) {
+      edges.forEach(el => el.classList.remove("dim"));
+      nodes.forEach(el => el.classList.remove("dim", "focused"));
+      return;
+    }
+
+    const neighbors = new Set([focusedId]);
+    edges.forEach(el => {
+      const a = el.dataset.aid;
+      const b = el.dataset.bid;
+      if (a === focusedId) neighbors.add(b);
+      if (b === focusedId) neighbors.add(a);
+    });
+
+    edges.forEach(el => {
+      const a = el.dataset.aid;
+      const b = el.dataset.bid;
+      const connected = (a === focusedId || b === focusedId);
+      el.classList.toggle("dim", !connected);
+    });
+
+    nodes.forEach(el => {
+      const id = el.dataset.id;
+      const keep = neighbors.has(id);
+      el.classList.toggle("dim", !keep);
+      el.classList.toggle("focused", id === focusedId);
+    });
+  }
+
+  svg.addEventListener("click", (e) => {
+    const g = e.target?.closest?.(".dipNode");
+    if (!g) return;
+    const id = g.dataset.id;
+    focusedId = (focusedId === id) ? null : id;
+    applyFocus();
+  });
+}
+
 /* ---------- Views ---------- */
 
 function viewChoosePlanetSkeleton() {
-  const buttons = PLANETS.map(p =>
-    `<button onclick="location.hash='#/planet?planet=${encodeURIComponent(p.id)}'">${p.label}</button>`
-  ).join("");
+  const buttons = PLANETS
+    .map(
+      p =>
+        `<button onclick="location.hash='#/planet?planet=${encodeURIComponent(
+          p.id
+        )}'">${p.label}</button>`
+    )
+    .join("");
 
   return `
     <section class="card">
@@ -200,6 +271,7 @@ function renderApiStatusOk(payload) {
     <div class="card" style="box-shadow:none; border:1px solid #e5e7eb;">
       <h3 style="margin:0 0 6px 0;">Live data connected ✅</h3>
       <div class="small">Project: <strong>${escapeHtml(payload.project || "—")}</strong></div>
+      <div class="small">Build: <code>${escapeHtml(payload.build || "—")}</code></div>
       <div class="small">Timestamp: ${escapeHtml(payload.timestamp || "—")}</div>
       <div class="small">Planets: ${escapeHtml(planetsLine)}</div>
     </div>
@@ -212,7 +284,9 @@ function renderApiStatusFail(err) {
       <h3 style="margin:0 0 6px 0;">Live data NOT connected ❌</h3>
       <div class="small">API_BASE:</div>
       <div class="small"><code>${escapeHtml(API_BASE)}</code></div>
-      <div class="small" style="margin-top:10px;"><strong>Error:</strong> ${escapeHtml(err?.message || String(err))}</div>
+      <div class="small" style="margin-top:10px;"><strong>Error:</strong> ${escapeHtml(
+        err?.message || String(err)
+      )}</div>
     </div>
   `;
 }
@@ -251,13 +325,23 @@ function viewPlanetLive(planet, payload) {
       }).join("")
     : `<li class="small">No countries found.</li>`;
 
+  // Debug strip: shows which sheet/year the API actually used
+  const debugLine = `
+    <div class="small" style="margin-top:6px;">
+      Build: <code>${escapeHtml(payload.build || "—")}</code> •
+      Year Sheet: <code>${escapeHtml(payload.yearSheet || ("Year " + payload.year) || "—")}</code> •
+      SheetId: <code>${escapeHtml(payload.spreadsheetId || "—")}</code>
+    </div>
+  `;
+
   return `
     <section class="card">
       <div class="hstack" style="justify-content:space-between;">
         <div>
           <h2 class="heroTitle">${escapeHtml(planet.label)}</h2>
           <div class="small">Live from API • Year ${escapeHtml(payload.year)}</div>
-          <div class="small">PlanetId: <code>${escapeHtml(payload.planetId || planet.id)}</code> • Sheet: <code>${escapeHtml(payload.spreadsheetId || "—")}</code></div>
+          ${debugLine}
+          <div class="small" style="margin-top:6px;">Tip: click a country node to highlight only its connections. Click again to reset.</div>
         </div>
         <div class="buttonRow">
           <button onclick="location.hash='#/'">Change Planet</button>
@@ -331,6 +415,7 @@ async function render() {
       if (!payload?.ok) throw new Error(payload?.error || "API returned ok=false");
       app.innerHTML = viewPlanetLive(planet, payload);
       attachDiplomacyTooltipHandlers();
+      attachDiplomacyFocusHandlers();
     } catch (err) {
       console.error(err);
       app.innerHTML = viewError(err);
