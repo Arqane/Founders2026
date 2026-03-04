@@ -22,24 +22,30 @@ function parseRoute() {
 function findPlanet(planetIdOrLabel) {
   if (!planetIdOrLabel) return null;
   const key = planetIdOrLabel.toLowerCase();
-  return (
-    PLANETS.find(p => p.id === key) ||
-    PLANETS.find(p => p.label.toLowerCase() === key) ||
-    null
-  );
+  return PLANETS.find(p => p.id === key) || PLANETS.find(p => p.label.toLowerCase() === key) || null;
 }
 
 function getDefaultPlanet() {
   return PLANETS.find(p => p.id === "test") || PLANETS[0] || null;
 }
 
-function setNav(planet = null) {
+function setNav(planet = null, active = "overview") {
   const planetCrumb = planet
     ? `<a href="#/planet?planet=${encodeURIComponent(planet.id)}">${planet.label}</a>`
     : "";
+
+  const tabs = planet ? `
+    <span class="navTabs">
+      <a class="navTab ${active==="overview"?"active":""}" href="#/planet?planet=${encodeURIComponent(planet.id)}">Overview</a>
+      <a class="navTab ${active==="trade"?"active":""}" href="#/trade?planet=${encodeURIComponent(planet.id)}">Trade</a>
+      <a class="navTab ${active==="resources"?"active":""}" href="#/resources?planet=${encodeURIComponent(planet.id)}">Resources</a>
+    </span>
+  ` : "";
+
   nav.innerHTML = `
     <a href="#/">Choose Planet</a>
     ${planetCrumb}
+    ${tabs}
   `;
 }
 
@@ -52,42 +58,47 @@ async function fetchJson(url) {
 }
 
 async function fetchApiHealth() {
-  // Add nocache to help while debugging deployments
-  const url = `${API_BASE}?nocache=1`;
+  return fetchJson(`${API_BASE}?nocache=1`);
+}
+
+async function fetchPlanetOverview(planetId) {
+  const url = `${API_BASE}?view=planet&planet=${encodeURIComponent(planetId)}&nocache=1`;
   return fetchJson(url);
 }
 
-async function fetchPlanetLive(planetId) {
-  // Year comes from API (current-year aware). We also add nocache.
-  const url = `${API_BASE}?view=planet&planet=${encodeURIComponent(planetId)}&nocache=1`;
+async function fetchPlanetTrade(planetId) {
+  const url = `${API_BASE}?view=trade&planet=${encodeURIComponent(planetId)}&nocache=1`;
+  return fetchJson(url);
+}
+
+async function fetchPlanetResources(planetId) {
+  const url = `${API_BASE}?view=resources&planet=${encodeURIComponent(planetId)}&nocache=1`;
   return fetchJson(url);
 }
 
 /* ---------- Formatting ---------- */
 
-function fmtBillion(n) {
+function fmtNum(n, digits = 0) {
   if (n === null || n === undefined || n === "") return "—";
-  return `${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })} B`;
+  return Number(n).toLocaleString(undefined, { maximumFractionDigits: digits });
 }
+
 function fmtPct(n) {
   if (n === null || n === undefined || n === "") return "—";
   return `${Number(n).toFixed(1)}%`;
 }
-function fmtSignedBillion(n) {
+
+function fmtMoneyB(n) {
   if (n === null || n === undefined || n === "") return "—";
-  const val = Number(n);
-  const sign = val > 0 ? "+" : (val < 0 ? "−" : "");
-  return `${sign}${Math.abs(val).toLocaleString(undefined, { maximumFractionDigits: 0 })} B`;
+  return `${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })} B`;
 }
 
-/* ---------- Diplomacy Web + Tooltip ---------- */
+/* ---------- Diplomacy Web + Tooltip + Focus ---------- */
 
 function legendHtml() {
-  const items = Object.entries(RELATIONSHIP_STYLES)
-    .map(([, v]) =>
-      `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
-    )
-    .join("");
+  const items = Object.entries(RELATIONSHIP_STYLES).map(([, v]) =>
+    `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
+  ).join("");
   return `<div class="graphLegend">${items}</div>`;
 }
 
@@ -97,8 +108,8 @@ function edgeTooltipText(edge) {
   const rel = String(edge?.relationship || "").trim();
   const st = String(edge?.status || "").trim();
 
-  const line1 = aName && bName ? `${aName} → ${bName}` : "";
-  const line2 = rel ? (st ? `${rel} (${st})` : rel) : st ? st : "";
+  const line1 = (aName && bName) ? `${aName} → ${bName}` : "";
+  const line2 = rel ? (st ? `${rel} (${st})` : rel) : (st ? st : "");
 
   if (line1 && line2) return `${line1}\n${line2}`;
   return line1 || line2 || "";
@@ -121,33 +132,29 @@ function diplomacyWebSvgFromEdges(countries, edges) {
 
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
 
-  const edgeLines = (edges || [])
-    .map(e => {
-      const A = nodeMap.get(e.aId);
-      const B = nodeMap.get(e.bId);
-      if (!A || !B) return "";
-      const style = RELATIONSHIP_STYLES[e.key] || RELATIONSHIP_STYLES.neutral;
+  const edgeLines = (edges || []).map(e => {
+    const A = nodeMap.get(e.aId);
+    const B = nodeMap.get(e.bId);
+    if (!A || !B) return "";
+    const style = RELATIONSHIP_STYLES[e.key] || RELATIONSHIP_STYLES.neutral;
 
-      const tip = edgeTooltipText(e);
-      const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
+    const tip = edgeTooltipText(e);
+    const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
 
-      return `<line class="dipEdge" ${tipAttr}
-        data-aid="${escapeHtml(e.aId)}" data-bid="${escapeHtml(e.bId)}"
-        x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
-        x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
-        stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
-    })
-    .join("");
+    return `<line class="dipEdge" ${tipAttr}
+      data-aid="${escapeHtml(e.aId)}" data-bid="${escapeHtml(e.bId)}"
+      x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
+      x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
+      stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
+  }).join("");
 
-  const nodeGroups = nodes
-    .map(n => `
-      <g class="dipNode" data-id="${escapeHtml(n.id)}">
-        <circle class="nodeCircle" cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="18" fill="rgba(255,255,255,0.08)"></circle>
-        <circle class="nodeDot" cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="12" fill="rgba(255,255,255,0.85)"></circle>
-        <text class="nodeLabel" x="${n.x.toFixed(2)}" y="${(n.y + 34).toFixed(2)}" text-anchor="middle">${escapeHtml(n.name)}</text>
-      </g>
-    `)
-    .join("");
+  const nodeGroups = nodes.map(n => `
+    <g class="dipNode" data-id="${escapeHtml(n.id)}">
+      <circle class="nodeCircle" cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="18" fill="rgba(255,255,255,0.08)"></circle>
+      <circle class="nodeDot" cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="12" fill="rgba(255,255,255,0.85)"></circle>
+      <text class="nodeLabel" x="${n.x.toFixed(2)}" y="${(n.y + 34).toFixed(2)}" text-anchor="middle">${escapeHtml(n.name)}</text>
+    </g>
+  `).join("");
 
   return `
     <div class="graphWrap" id="dipWrap">
@@ -170,15 +177,12 @@ function attachDiplomacyTooltipHandlers() {
   function showTip(e, text) {
     tip.innerHTML = escapeHtml(text).replaceAll("\n", "<br/>");
     tip.classList.add("show");
-
     const rect = wrap.getBoundingClientRect();
     tip.style.left = `${e.clientX - rect.left}px`;
     tip.style.top = `${e.clientY - rect.top}px`;
   }
 
-  function hideTip() {
-    tip.classList.remove("show");
-  }
+  function hideTip() { tip.classList.remove("show"); }
 
   svg.addEventListener("mousemove", (e) => {
     const t = e.target;
@@ -192,7 +196,6 @@ function attachDiplomacyTooltipHandlers() {
   svg.addEventListener("mouseleave", hideTip);
 }
 
-// NEW: click-to-focus connections; click the same node again to reset
 function attachDiplomacyFocusHandlers() {
   const svg = document.getElementById("dipSvg");
   if (!svg) return;
@@ -220,8 +223,7 @@ function attachDiplomacyFocusHandlers() {
     edges.forEach(el => {
       const a = el.dataset.aid;
       const b = el.dataset.bid;
-      const connected = (a === focusedId || b === focusedId);
-      el.classList.toggle("dim", !connected);
+      el.classList.toggle("dim", !(a === focusedId || b === focusedId));
     });
 
     nodes.forEach(el => {
@@ -241,55 +243,7 @@ function attachDiplomacyFocusHandlers() {
   });
 }
 
-/* ---------- Views ---------- */
-
-function viewChoosePlanetSkeleton() {
-  const buttons = PLANETS
-    .map(
-      p =>
-        `<button onclick="location.hash='#/planet?planet=${encodeURIComponent(
-          p.id
-        )}'">${p.label}</button>`
-    )
-    .join("");
-
-  return `
-    <section class="card">
-      <h2 class="heroTitle">Choose a Planet</h2>
-      <p class="small">Connecting to live data…</p>
-      <div class="buttonRow">${buttons}</div>
-      <div id="apiStatus" style="margin-top:14px;"></div>
-    </section>
-  `;
-}
-
-function renderApiStatusOk(payload) {
-  const planets = Array.isArray(payload?.availablePlanets) ? payload.availablePlanets : [];
-  const planetsLine = planets.length ? planets.join(", ") : "—";
-
-  return `
-    <div class="card" style="box-shadow:none; border:1px solid #e5e7eb;">
-      <h3 style="margin:0 0 6px 0;">Live data connected ✅</h3>
-      <div class="small">Project: <strong>${escapeHtml(payload.project || "—")}</strong></div>
-      <div class="small">Build: <code>${escapeHtml(payload.build || "—")}</code></div>
-      <div class="small">Timestamp: ${escapeHtml(payload.timestamp || "—")}</div>
-      <div class="small">Planets: ${escapeHtml(planetsLine)}</div>
-    </div>
-  `;
-}
-
-function renderApiStatusFail(err) {
-  return `
-    <div class="card" style="box-shadow:none; border:1px solid #ef4444;">
-      <h3 style="margin:0 0 6px 0;">Live data NOT connected ❌</h3>
-      <div class="small">API_BASE:</div>
-      <div class="small"><code>${escapeHtml(API_BASE)}</code></div>
-      <div class="small" style="margin-top:10px;"><strong>Error:</strong> ${escapeHtml(
-        err?.message || String(err)
-      )}</div>
-    </div>
-  `;
-}
+/* ---------- Tables ---------- */
 
 function rankingsTable(title, rows, fmtFn) {
   const body = rows?.length
@@ -313,34 +267,144 @@ function rankingsTable(title, rows, fmtFn) {
   `;
 }
 
-function viewPlanetLive(planet, payload) {
-  const countries = Array.isArray(payload?.countries) ? payload.countries : [];
-  const rankings = payload?.rankings || {};
-  const edges = payload?.diplomacy?.edges || [];
+function listTable(title, rows, fmtFn) {
+  const body = rows?.length
+    ? rows.slice(0, 40).map((r) => `
+        <tr>
+          <td>${escapeHtml(r.name)}</td>
+          <td class="num">${fmtFn(r.value)}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="2" class="small">No data.</td></tr>`;
 
-  const countryLinks = countries.length
-    ? countries.map(c => {
-        const href = `#/country?planet=${encodeURIComponent(planet.id)}&country=${encodeURIComponent(c.id)}`;
-        return `<li><a class="inline" href="${href}">${escapeHtml(c.name)}</a></li>`;
-      }).join("")
-    : `<li class="small">No countries found.</li>`;
-
-  // Debug strip: shows which sheet/year the API actually used
-  const debugLine = `
-    <div class="small" style="margin-top:6px;">
-      Build: <code>${escapeHtml(payload.build || "—")}</code> •
-      Year Sheet: <code>${escapeHtml(payload.yearSheet || ("Year " + payload.year) || "—")}</code> •
-      SheetId: <code>${escapeHtml(payload.spreadsheetId || "—")}</code>
+  return `
+    <div class="card" style="box-shadow:none; border:1px solid #eee;">
+      <h4 style="margin:0 0 10px 0;">${escapeHtml(title)}</h4>
+      <table class="table">
+        <thead><tr><th>Country</th><th class="num">Value</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
     </div>
   `;
+}
 
+/* ---------- Resources Pie (SVG) ---------- */
+
+function pieSvg(breakdown, title) {
+  const data = (breakdown || []).filter(x => Number(x.value) > 0);
+  const total = data.reduce((s, x) => s + Number(x.value || 0), 0);
+  if (!data.length || total <= 0) return `<div class="small">No countries possess this resource (or all values are 0).</div>`;
+
+  const W = 520, H = 360;
+  const cx = 180, cy = 180, r = 120;
+
+  // simple palette (no explicit requirement; uses HSL for variety)
+  function colorFor(i, n) {
+    const hue = Math.round((360 * i) / Math.max(1, n));
+    return `hsl(${hue} 70% 55%)`;
+  }
+
+  let start = -Math.PI / 2;
+  const slices = data.map((d, i) => {
+    const v = Number(d.value);
+    const ang = (v / total) * Math.PI * 2;
+    const end = start + ang;
+
+    const x1 = cx + r * Math.cos(start);
+    const y1 = cy + r * Math.sin(start);
+    const x2 = cx + r * Math.cos(end);
+    const y2 = cy + r * Math.sin(end);
+    const large = ang > Math.PI ? 1 : 0;
+
+    const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+
+    // label at mid-angle (VALUE label, not %)
+    const mid = (start + end) / 2;
+    const lx = cx + (r + 24) * Math.cos(mid);
+    const ly = cy + (r + 24) * Math.sin(mid);
+
+    const label = `${escapeHtml(d.name)}: ${fmtNum(v, 0)}`;
+
+    const out = {
+      path,
+      fill: colorFor(i, data.length),
+      label,
+      lx, ly
+    };
+
+    start = end;
+    return out;
+  });
+
+  const legendRows = data
+    .slice(0, 12)
+    .map((d, i) => `<div class="small"><span style="display:inline-block;width:10px;height:10px;background:${colorFor(i, data.length)};border-radius:2px;margin-right:6px;"></span>${escapeHtml(d.name)} — <strong>${fmtNum(d.value, 0)}</strong></div>`)
+    .join("");
+
+  return `
+    <div class="card" style="box-shadow:none; border:1px solid #eee;">
+      <h4 style="margin:0 0 10px 0;">${escapeHtml(title)}</h4>
+      <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Resource pie chart">
+        ${slices.map(s => `<path d="${s.path}" fill="${s.fill}" opacity="0.95"></path>`).join("")}
+        ${slices.map(s => `<text x="${s.lx}" y="${s.ly}" font-size="11" text-anchor="middle">${escapeHtml(s.label)}</text>`).join("")}
+      </svg>
+      <div style="margin-top:10px;">${legendRows}</div>
+      ${data.length > 12 ? `<div class="small" style="margin-top:6px;">(+${data.length - 12} more countries not shown in legend)</div>` : ""}
+    </div>
+  `;
+}
+
+/* ---------- Views ---------- */
+
+function viewChoosePlanetSkeleton() {
+  const buttons = PLANETS.map(p =>
+    `<button onclick="location.hash='#/planet?planet=${encodeURIComponent(p.id)}'">${p.label}</button>`
+  ).join("");
+
+  return `
+    <section class="card">
+      <h2 class="heroTitle">Choose a Planet</h2>
+      <p class="small">Connecting to live data…</p>
+      <div class="buttonRow">${buttons}</div>
+      <div id="apiStatus" style="margin-top:14px;"></div>
+    </section>
+  `;
+}
+
+function renderApiStatusOk(payload) {
+  const planets = Array.isArray(payload?.availablePlanets) ? payload.availablePlanets : [];
+  return `
+    <div class="card" style="box-shadow:none; border:1px solid #e5e7eb;">
+      <h3 style="margin:0 0 6px 0;">Live data connected ✅</h3>
+      <div class="small">Project: <strong>${escapeHtml(payload.project || "—")}</strong></div>
+      <div class="small">Build: <code>${escapeHtml(payload.build || "—")}</code></div>
+      <div class="small">Timestamp: ${escapeHtml(payload.timestamp || "—")}</div>
+      <div class="small">Planets: ${escapeHtml(planets.join(", ") || "—")}</div>
+    </div>
+  `;
+}
+
+function renderApiStatusFail(err) {
+  return `
+    <div class="card" style="box-shadow:none; border:1px solid #ef4444;">
+      <h3 style="margin:0 0 6px 0;">Live data NOT connected ❌</h3>
+      <div class="small">API_BASE:</div>
+      <div class="small"><code>${escapeHtml(API_BASE)}</code></div>
+      <div class="small" style="margin-top:10px;"><strong>Error:</strong> ${escapeHtml(err?.message || String(err))}</div>
+    </div>
+  `;
+}
+
+function planetHeader(planet, payload) {
   return `
     <section class="card">
       <div class="hstack" style="justify-content:space-between;">
         <div>
           <h2 class="heroTitle">${escapeHtml(planet.label)}</h2>
-          <div class="small">Live from API • Year ${escapeHtml(payload.year)}</div>
-          ${debugLine}
+          <div class="small">Live from API • ${escapeHtml(payload.yearTokenDisplay || "")} • ${escapeHtml(payload.yearSheet || "")}</div>
+          <div class="small" style="margin-top:6px;">
+            SheetId: <code>${escapeHtml(payload.spreadsheetId || "—")}</code>
+          </div>
           <div class="small" style="margin-top:6px;">Tip: click a country node to highlight only its connections. Click again to reset.</div>
         </div>
         <div class="buttonRow">
@@ -348,6 +412,16 @@ function viewPlanetLive(planet, payload) {
         </div>
       </div>
     </section>
+  `;
+}
+
+function viewPlanetOverview(planet, payload) {
+  const countries = Array.isArray(payload?.countries) ? payload.countries : [];
+  const edges = payload?.diplomacy?.edges || [];
+  const r = payload?.rankings || {};
+
+  return `
+    ${planetHeader(planet, payload)}
 
     <section class="card">
       <h3 class="sectionTitle">Diplomacy Web</h3>
@@ -356,20 +430,98 @@ function viewPlanetLive(planet, payload) {
     </section>
 
     <section class="card">
-      <h3 class="sectionTitle">Countries</h3>
-      <ul>${countryLinks}</ul>
-    </section>
-
-    <section class="card">
-      <h3 class="sectionTitle">Rankings</h3>
+      <h3 class="sectionTitle">Current-Year Rankings</h3>
       <div class="grid2">
-        ${rankingsTable("Real GDP (rGDP, $B)", rankings.rGDP, fmtBillion)}
-        ${rankingsTable("Unemployment Rate (%)", rankings.unemployment, fmtPct)}
-        ${rankingsTable("Inflation Rate (%)", rankings.inflation, fmtPct)}
-        ${rankingsTable("Trade Balance ($B)", rankings.tradeBalance, fmtSignedBillion)}
+        ${rankingsTable("Real GDP (Real GDP)", r.rGDP, fmtMoneyB)}
+        ${rankingsTable("Real GDP per Capita (rGDP per Capita)", r.rGDPpc, (n) => fmtNum(n, 0))}
+        ${rankingsTable("Real GDP Growth Rate (rGDP Growth Rate)", r.rGDPGrowth, fmtPct)}
+        ${rankingsTable("Unemployment Rate (Total unemployment rate)", r.unemployment, fmtPct)}
+        ${rankingsTable("Inflation Rate (Inflation rate)", r.inflation, fmtPct)}
+        ${rankingsTable("Budget Deficit/Surplus", r.budgetDeficit, (n) => fmtMoneyB(n))}
+        ${rankingsTable("National Debt/Fund", r.nationalDebt, (n) => fmtMoneyB(n))}
+        ${rankingsTable("Federal Funds Rate", r.fedFundsRate, fmtPct)}
+        ${rankingsTable("Total Population", r.population, (n) => fmtNum(n, 0))}
+        ${listTable("Economic System", r.economicSystem, (v) => escapeHtml(v))}
       </div>
     </section>
   `;
+}
+
+function viewTrade(planet, payload) {
+  const items = payload?.trade?.items || [];
+  const body = items.length ? items.map(x => `
+    <tr>
+      <td>${escapeHtml(x.name)}</td>
+      <td class="num">${fmtNum(x.frequency, 0)}</td>
+      <td class="num">${fmtNum(x.volume, 0)}</td>
+      <td class="num">${fmtMoneyB(x.exportValue)}</td>
+      <td class="num">${fmtMoneyB(x.importValue)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="5" class="small">No trade data.</td></tr>`;
+
+  return `
+    ${planetHeader(planet, payload)}
+    <section class="card">
+      <h3 class="sectionTitle">Trade</h3>
+      <p class="small">From the Trade tab, row 18.</p>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Country</th>
+            <th class="num">Frequency</th>
+            <th class="num">Volume</th>
+            <th class="num">Export Value</th>
+            <th class="num">Import Value</th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+    </section>
+  `;
+}
+
+function viewResources(planet, payload) {
+  const worldTotals = payload?.resources?.worldTotals || [];
+  const breakdownByResource = payload?.resources?.breakdownByResource || {};
+  const resources = worldTotals.map(x => x.resource);
+
+  const options = resources.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
+
+  return `
+    ${planetHeader(planet, payload)}
+
+    <section class="card">
+      <h3 class="sectionTitle">Resources</h3>
+      <div class="hstack" style="gap:12px; align-items:center;">
+        <div class="small"><strong>Select a resource:</strong></div>
+        <select id="resSelect">${options}</select>
+      </div>
+
+      <div id="resTotals" class="small" style="margin-top:10px;"></div>
+      <div id="resPie" style="margin-top:12px;"></div>
+    </section>
+  `;
+}
+
+function attachResourcesHandlers(payload) {
+  const sel = document.getElementById("resSelect");
+  const totalsEl = document.getElementById("resTotals");
+  const pieEl = document.getElementById("resPie");
+  if (!sel || !totalsEl || !pieEl) return;
+
+  const worldTotals = payload?.resources?.worldTotals || [];
+  const breakdownByResource = payload?.resources?.breakdownByResource || {};
+  const totalMap = new Map(worldTotals.map(x => [x.resource, x.total]));
+
+  function render(resource) {
+    const total = totalMap.get(resource);
+    totalsEl.innerHTML = `World total: <strong>${fmtNum(total, 0)}</strong>`;
+    const breakdown = breakdownByResource[resource] || [];
+    pieEl.innerHTML = pieSvg(breakdown, `${resource} holdings by country (labels show values)`);
+  }
+
+  render(sel.value);
+  sel.addEventListener("change", () => render(sel.value));
 }
 
 function viewLoading(msg) {
@@ -408,12 +560,12 @@ async function render() {
 
   if (path === "/planet") {
     const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
-    setNav(planet);
+    setNav(planet, "overview");
     app.innerHTML = viewLoading(`Loading ${planet.label}`);
     try {
-      const payload = await fetchPlanetLive(planet.id);
+      const payload = await fetchPlanetOverview(planet.id);
       if (!payload?.ok) throw new Error(payload?.error || "API returned ok=false");
-      app.innerHTML = viewPlanetLive(planet, payload);
+      app.innerHTML = viewPlanetOverview(planet, payload);
       attachDiplomacyTooltipHandlers();
       attachDiplomacyFocusHandlers();
     } catch (err) {
@@ -423,13 +575,46 @@ async function render() {
     return;
   }
 
+  if (path === "/trade") {
+    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
+    setNav(planet, "trade");
+    app.innerHTML = viewLoading(`Loading Trade • ${planet.label}`);
+    try {
+      const payload = await fetchPlanetTrade(planet.id);
+      if (!payload?.ok) throw new Error(payload?.error || "API returned ok=false");
+      app.innerHTML = viewTrade(planet, payload);
+    } catch (err) {
+      console.error(err);
+      app.innerHTML = viewError(err);
+    }
+    return;
+  }
+
+  if (path === "/resources") {
+    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
+    setNav(planet, "resources");
+    app.innerHTML = viewLoading(`Loading Resources • ${planet.label}`);
+    try {
+      const payload = await fetchPlanetResources(planet.id);
+      if (!payload?.ok) throw new Error(payload?.error || "API returned ok=false");
+      app.innerHTML = viewResources(planet, payload);
+      attachResourcesHandlers(payload);
+    } catch (err) {
+      console.error(err);
+      app.innerHTML = viewError(err);
+    }
+    return;
+  }
+
+  // Placeholder country pages for later
   if (path === "/country") {
-    setNav(findPlanet(params.get("planet")) || getDefaultPlanet());
+    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
+    setNav(planet, "overview");
     app.innerHTML = `
       <section class="card">
-        <h2 class="heroTitle">Country page (next step)</h2>
-        <p class="small">Next: live flagPublicUrl, resources (Y:BN), demonym, motto, etc.</p>
-        <p><a class="inline" href="#/">Back</a></p>
+        <h2 class="heroTitle">Country profile (coming later)</h2>
+        <p class="small">We’ll build profiles after Overview/Trade/Resources are done.</p>
+        <p><a class="inline" href="#/planet?planet=${encodeURIComponent(planet.id)}">Back to planet</a></p>
       </section>
     `;
     return;
