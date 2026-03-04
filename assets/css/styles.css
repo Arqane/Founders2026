@@ -142,4 +142,12 @@ a.inline:hover { text-decoration:underline; }
 
 .dim { opacity: 0.10 !important; }
 
+.navTabs { margin-left: 10px; }
+.navTab { margin-left: 10px; opacity: 0.8; text-decoration: none; }
+.navTab.active { opacity: 1; text-decoration: underline; }
+
+.dipNode { cursor: pointer; }
+.dim { opacity: 0.10 !important; }
+.dipTooltip { pointer-events: none; }
+
 .dipTooltip { pointer-events: none; } /* prevents tooltip “stealing” hover */
