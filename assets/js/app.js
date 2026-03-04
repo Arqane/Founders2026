@@ -62,35 +62,46 @@ async function fetchApiHealth() {
 }
 
 async function fetchPlanetOverview(planetId) {
-  const url = `${API_BASE}?view=planet&planet=${encodeURIComponent(planetId)}&nocache=1`;
-  return fetchJson(url);
+  return fetchJson(`${API_BASE}?view=planet&planet=${encodeURIComponent(planetId)}&nocache=1`);
 }
 
 async function fetchPlanetTrade(planetId) {
-  const url = `${API_BASE}?view=trade&planet=${encodeURIComponent(planetId)}&nocache=1`;
-  return fetchJson(url);
+  return fetchJson(`${API_BASE}?view=trade&planet=${encodeURIComponent(planetId)}&nocache=1`);
 }
 
 async function fetchPlanetResources(planetId) {
-  const url = `${API_BASE}?view=resources&planet=${encodeURIComponent(planetId)}&nocache=1`;
-  return fetchJson(url);
+  return fetchJson(`${API_BASE}?view=resources&planet=${encodeURIComponent(planetId)}&nocache=1`);
 }
 
 /* ---------- Formatting ---------- */
 
-function fmtNum(n, digits = 0) {
+// Always return non-wrapping money for tables.
+function fmtUsdB(n) {
   if (n === null || n === undefined || n === "") return "—";
-  return Number(n).toLocaleString(undefined, { maximumFractionDigits: digits });
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "—";
+  return `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}B`;
+}
+
+function fmtUsd(n, digits = 0) {
+  if (n === null || n === undefined || n === "") return "—";
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "—";
+  return `$${v.toLocaleString(undefined, { maximumFractionDigits: digits })}`;
 }
 
 function fmtPct(n) {
   if (n === null || n === undefined || n === "") return "—";
-  return `${Number(n).toFixed(1)}%`;
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "—";
+  return `${v.toFixed(1)}%`;
 }
 
-function fmtMoneyB(n) {
+function fmtNum(n, digits = 0) {
   if (n === null || n === undefined || n === "") return "—";
-  return `${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })} B`;
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "—";
+  return v.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
 /* ---------- Diplomacy Web + Tooltip + Focus ---------- */
@@ -288,7 +299,43 @@ function listTable(title, rows, fmtFn) {
   `;
 }
 
-/* ---------- Resources Pie (SVG) ---------- */
+/* ---------- Trade visualization (Top-N bar charts) ---------- */
+
+function topN(items, key, n = 10) {
+  const list = (items || [])
+    .map(x => ({ ...x, _v: Number(x[key]) }))
+    .filter(x => Number.isFinite(x._v))
+    .sort((a, b) => b._v - a._v)
+    .slice(0, n);
+  return list;
+}
+
+function barChartHtml(title, items, key, fmtFn) {
+  const top = topN(items, key, 10);
+  if (!top.length) return `<div class="small">No data for ${escapeHtml(title)}.</div>`;
+
+  const max = Math.max(...top.map(x => x._v), 1);
+
+  const rows = top.map(x => {
+    const pct = Math.max(0, Math.min(100, (x._v / max) * 100));
+    return `
+      <div class="barRow">
+        <div class="small">${escapeHtml(x.name)}</div>
+        <div class="barTrack"><div class="barFill" style="width:${pct.toFixed(1)}%"></div></div>
+        <div class="small num">${fmtFn(x._v)}</div>
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div class="card" style="box-shadow:none; border:1px solid #eee;">
+      <h4 style="margin:0 0 10px 0;">${escapeHtml(title)}</h4>
+      <div class="barChart">${rows}</div>
+    </div>
+  `;
+}
+
+/* ---------- Resources Pie (SVG with VALUE labels) ---------- */
 
 function pieSvg(breakdown, title) {
   const data = (breakdown || []).filter(x => Number(x.value) > 0);
@@ -298,7 +345,6 @@ function pieSvg(breakdown, title) {
   const W = 520, H = 360;
   const cx = 180, cy = 180, r = 120;
 
-  // simple palette (no explicit requirement; uses HSL for variety)
   function colorFor(i, n) {
     const hue = Math.round((360 * i) / Math.max(1, n));
     return `hsl(${hue} 70% 55%)`;
@@ -318,28 +364,15 @@ function pieSvg(breakdown, title) {
 
     const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
 
-    // label at mid-angle (VALUE label, not %)
     const mid = (start + end) / 2;
     const lx = cx + (r + 24) * Math.cos(mid);
     const ly = cy + (r + 24) * Math.sin(mid);
 
     const label = `${escapeHtml(d.name)}: ${fmtNum(v, 0)}`;
 
-    const out = {
-      path,
-      fill: colorFor(i, data.length),
-      label,
-      lx, ly
-    };
-
     start = end;
-    return out;
+    return { path, fill: colorFor(i, data.length), label, lx, ly };
   });
-
-  const legendRows = data
-    .slice(0, 12)
-    .map((d, i) => `<div class="small"><span style="display:inline-block;width:10px;height:10px;background:${colorFor(i, data.length)};border-radius:2px;margin-right:6px;"></span>${escapeHtml(d.name)} — <strong>${fmtNum(d.value, 0)}</strong></div>`)
-    .join("");
 
   return `
     <div class="card" style="box-shadow:none; border:1px solid #eee;">
@@ -348,8 +381,6 @@ function pieSvg(breakdown, title) {
         ${slices.map(s => `<path d="${s.path}" fill="${s.fill}" opacity="0.95"></path>`).join("")}
         ${slices.map(s => `<text x="${s.lx}" y="${s.ly}" font-size="11" text-anchor="middle">${escapeHtml(s.label)}</text>`).join("")}
       </svg>
-      <div style="margin-top:10px;">${legendRows}</div>
-      ${data.length > 12 ? `<div class="small" style="margin-top:6px;">(+${data.length - 12} more countries not shown in legend)</div>` : ""}
     </div>
   `;
 }
@@ -415,30 +446,34 @@ function planetHeader(planet, payload) {
   `;
 }
 
-function viewPlanetOverview(planet, payload) {
+function diplomacySectionFromPayload(payload) {
   const countries = Array.isArray(payload?.countries) ? payload.countries : [];
   const edges = payload?.diplomacy?.edges || [];
-  const r = payload?.rankings || {};
-
   return `
-    ${planetHeader(planet, payload)}
-
     <section class="card">
       <h3 class="sectionTitle">Diplomacy Web</h3>
       <p class="small">Hover a line to see: Source → Target + relationship type.</p>
       ${diplomacyWebSvgFromEdges(countries, edges)}
     </section>
+  `;
+}
+
+function viewPlanetOverview(planet, payload) {
+  const r = payload?.rankings || {};
+  return `
+    ${planetHeader(planet, payload)}
+    ${diplomacySectionFromPayload(payload)}
 
     <section class="card">
       <h3 class="sectionTitle">Current-Year Rankings</h3>
       <div class="grid2">
-        ${rankingsTable("Real GDP (Real GDP)", r.rGDP, fmtMoneyB)}
-        ${rankingsTable("Real GDP per Capita (rGDP per Capita)", r.rGDPpc, (n) => fmtNum(n, 0))}
-        ${rankingsTable("Real GDP Growth Rate (rGDP Growth Rate)", r.rGDPGrowth, fmtPct)}
-        ${rankingsTable("Unemployment Rate (Total unemployment rate)", r.unemployment, fmtPct)}
-        ${rankingsTable("Inflation Rate (Inflation rate)", r.inflation, fmtPct)}
-        ${rankingsTable("Budget Deficit/Surplus", r.budgetDeficit, (n) => fmtMoneyB(n))}
-        ${rankingsTable("National Debt/Fund", r.nationalDebt, (n) => fmtMoneyB(n))}
+        ${rankingsTable("Real GDP", r.rGDP, fmtUsdB)}
+        ${rankingsTable("Real GDP per Capita", r.rGDPpc, (n) => fmtUsd(n, 0))}
+        ${rankingsTable("Real GDP Growth Rate", r.rGDPGrowth, fmtPct)}
+        ${rankingsTable("Unemployment Rate", r.unemployment, fmtPct)}
+        ${rankingsTable("Inflation Rate", r.inflation, fmtPct)}
+        ${rankingsTable("Budget Deficit/Surplus", r.budgetDeficit, fmtUsdB)}
+        ${rankingsTable("National Debt/Fund", r.nationalDebt, fmtUsdB)}
         ${rankingsTable("Federal Funds Rate", r.fedFundsRate, fmtPct)}
         ${rankingsTable("Total Population", r.population, (n) => fmtNum(n, 0))}
         ${listTable("Economic System", r.economicSystem, (v) => escapeHtml(v))}
@@ -447,31 +482,45 @@ function viewPlanetOverview(planet, payload) {
   `;
 }
 
-function viewTrade(planet, payload) {
-  const items = payload?.trade?.items || [];
+function viewTrade(planet, overviewPayload, tradePayload) {
+  const items = tradePayload?.trade?.items || [];
+
   const body = items.length ? items.map(x => `
     <tr>
       <td>${escapeHtml(x.name)}</td>
-      <td class="num">${fmtNum(x.frequency, 0)}</td>
-      <td class="num">${fmtNum(x.volume, 0)}</td>
-      <td class="num">${fmtMoneyB(x.exportValue)}</td>
-      <td class="num">${fmtMoneyB(x.importValue)}</td>
+      <td class="num">${fmtUsd(x.frequency, 0)}</td>
+      <td class="num">${fmtUsd(x.volume, 0)}</td>
+      <td class="num">${fmtUsdB(x.exportValue)}</td>
+      <td class="num">${fmtUsdB(x.importValue)}</td>
     </tr>
   `).join("") : `<tr><td colspan="5" class="small">No trade data.</td></tr>`;
 
   return `
-    ${planetHeader(planet, payload)}
+    ${planetHeader(planet, tradePayload)}
+    ${diplomacySectionFromPayload(overviewPayload)}
+
     <section class="card">
-      <h3 class="sectionTitle">Trade</h3>
+      <h3 class="sectionTitle">Trade Overview</h3>
+      <p class="small">Visualization (top 10 per metric).</p>
+      <div class="grid2">
+        ${barChartHtml("Trade Frequency (Top 10)", items, "frequency", (v) => fmtUsd(v, 0))}
+        ${barChartHtml("Trade Volume (Top 10)", items, "volume", (v) => fmtUsd(v, 0))}
+        ${barChartHtml("Export Value ($B, Top 10)", items, "exportValue", fmtUsdB)}
+        ${barChartHtml("Import Value ($B, Top 10)", items, "importValue", fmtUsdB)}
+      </div>
+    </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">Trade Table</h3>
       <p class="small">From the Trade tab, row 18.</p>
       <table class="table">
         <thead>
           <tr>
             <th>Country</th>
-            <th class="num">Frequency</th>
-            <th class="num">Volume</th>
-            <th class="num">Export Value</th>
-            <th class="num">Import Value</th>
+            <th class="num">$ Frequency</th>
+            <th class="num">$ Volume</th>
+            <th class="num">$ Export Value (B)</th>
+            <th class="num">$ Import Value (B)</th>
           </tr>
         </thead>
         <tbody>${body}</tbody>
@@ -480,15 +529,15 @@ function viewTrade(planet, payload) {
   `;
 }
 
-function viewResources(planet, payload) {
-  const worldTotals = payload?.resources?.worldTotals || [];
-  const breakdownByResource = payload?.resources?.breakdownByResource || {};
+function viewResources(planet, overviewPayload, resPayload) {
+  const worldTotals = resPayload?.resources?.worldTotals || [];
+  const breakdownByResource = resPayload?.resources?.breakdownByResource || {};
   const resources = worldTotals.map(x => x.resource);
-
   const options = resources.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
 
   return `
-    ${planetHeader(planet, payload)}
+    ${planetHeader(planet, resPayload)}
+    ${diplomacySectionFromPayload(overviewPayload)}
 
     <section class="card">
       <h3 class="sectionTitle">Resources</h3>
@@ -580,9 +629,17 @@ async function render() {
     setNav(planet, "trade");
     app.innerHTML = viewLoading(`Loading Trade • ${planet.label}`);
     try {
-      const payload = await fetchPlanetTrade(planet.id);
-      if (!payload?.ok) throw new Error(payload?.error || "API returned ok=false");
-      app.innerHTML = viewTrade(planet, payload);
+      // Need overview for diplomacy web + trade payload for table/viz
+      const [overviewPayload, tradePayload] = await Promise.all([
+        fetchPlanetOverview(planet.id),
+        fetchPlanetTrade(planet.id),
+      ]);
+      if (!overviewPayload?.ok) throw new Error(overviewPayload?.error || "Overview ok=false");
+      if (!tradePayload?.ok) throw new Error(tradePayload?.error || "Trade ok=false");
+
+      app.innerHTML = viewTrade(planet, overviewPayload, tradePayload);
+      attachDiplomacyTooltipHandlers();
+      attachDiplomacyFocusHandlers();
     } catch (err) {
       console.error(err);
       app.innerHTML = viewError(err);
@@ -595,10 +652,17 @@ async function render() {
     setNav(planet, "resources");
     app.innerHTML = viewLoading(`Loading Resources • ${planet.label}`);
     try {
-      const payload = await fetchPlanetResources(planet.id);
-      if (!payload?.ok) throw new Error(payload?.error || "API returned ok=false");
-      app.innerHTML = viewResources(planet, payload);
-      attachResourcesHandlers(payload);
+      const [overviewPayload, resPayload] = await Promise.all([
+        fetchPlanetOverview(planet.id),
+        fetchPlanetResources(planet.id),
+      ]);
+      if (!overviewPayload?.ok) throw new Error(overviewPayload?.error || "Overview ok=false");
+      if (!resPayload?.ok) throw new Error(resPayload?.error || "Resources ok=false");
+
+      app.innerHTML = viewResources(planet, overviewPayload, resPayload);
+      attachDiplomacyTooltipHandlers();
+      attachDiplomacyFocusHandlers();
+      attachResourcesHandlers(resPayload);
     } catch (err) {
       console.error(err);
       app.innerHTML = viewError(err);
@@ -606,7 +670,7 @@ async function render() {
     return;
   }
 
-  // Placeholder country pages for later
+  // Country profiles later
   if (path === "/country") {
     const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
     setNav(planet, "overview");
