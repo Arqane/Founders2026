@@ -39,7 +39,6 @@ function getDefaultPlanet() {
 }
 
 function yearTitleFromPayload(payload) {
-  // Prefer explicit year number; fall back to parsing "Year 3" from yearSheet.
   const y = payload?.year;
   if (Number.isFinite(Number(y))) return `Year ${Number(y)}`;
   const ys = String(payload?.yearSheet || "").trim();
@@ -56,8 +55,6 @@ function yearTitleFromPayload(payload) {
 ========================================================= */
 
 function tabStyle(isActive) {
-  // Active: light gray bg + black text
-  // Inactive: black bg + light gray text
   return isActive
     ? "background:#e5e7eb;color:#111827;border:1px solid #e5e7eb;"
     : "background:#111827;color:#e5e7eb;border:1px solid #374151;";
@@ -160,7 +157,7 @@ function fmtNum(n, digits = 0) {
 }
 
 /* =========================================================
-   Diplomacy Web (centered)
+   Diplomacy Web (centered) + focus disables tooltip on dim edges
 ========================================================= */
 
 function legendHtml() {
@@ -213,6 +210,7 @@ function diplomacyWebSvgFromEdges(countries, edges) {
       const tip = edgeTooltipText(e);
       const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
 
+      // NOTE: tooltip is present, but handlers will IGNORE .dim edges when focused
       return `<line class="dipEdge" ${tipAttr}
         data-aid="${escapeHtml(e.aId)}" data-bid="${escapeHtml(e.bId)}"
         x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
@@ -278,7 +276,13 @@ function attachDiplomacyTooltipHandlers() {
 
   svg.addEventListener("mousemove", (e) => {
     const t = e.target;
+
+    // Only show tooltip for non-dim edges
     if (t && t.classList && t.classList.contains("dipEdge") && t.dataset?.tip) {
+      if (t.classList.contains("dim")) {
+        hideTip();
+        return;
+      }
       showTip(e, t.dataset.tip);
     } else {
       hideTip();
@@ -625,7 +629,6 @@ function renderApiStatusFail(err) {
 }
 
 function planetHeader(planet, payload) {
-  // Removed Sheet ID line entirely
   return `
     <section class="card">
       <div class="hstack" style="justify-content:space-between;">
@@ -683,7 +686,6 @@ function viewTrade(planet, overviewPayload, tradePayload) {
   const volRank = rankFromTradeItems(items, "volume", "desc", false);
   const expRank = rankFromTradeItems(items, "exportValue", "desc", false);
 
-  // Import Value sorted by ABS magnitude
   const impRankAbs = rankFromTradeItems(items, "importValue", "desc", true);
 
   return `
@@ -707,7 +709,6 @@ function viewTrade(planet, overviewPayload, tradePayload) {
           ${barChartHtml("Trade Frequency", items, "frequency", (v) => fmtNum(v, 0))}
           ${barChartHtml("Trade Volume", items, "volume", (v) => fmtNum(v, 0))}
           ${barChartHtml("Export Value ($B)", items, "exportValue", fmtUsdB)}
-          <!-- IMPORTANT: imports chart uses ABS for bar lengths so negatives render correctly -->
           ${barChartHtml("Import Value ($B)", items, "importValue", fmtUsdB, true)}
         </div>
       </div>
