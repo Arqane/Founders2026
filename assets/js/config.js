@@ -13,9 +13,10 @@ export const PLANETS = [
 
 // Diplomacy relationship styles
 export const RELATIONSHIP_STYLES = {
-  ally:     { label: "Ally",     color: "#2563eb" }, // blue
-  friendly: { label: "Friendly", color: "#22c55e" },
-  neutral:  { label: "Neutral",  color: "#6b7280" },
-  tense:    { label: "Tense",    color: "#f59e0b" },
-  hostile:  { label: "Hostile",  color: "#ef4444" },
+  ally:     { label: "Ally",     color: "#2563eb" }, // Blue
+  friendly: { label: "Friendly", color: "#22c55e" }, // Green
+  neutral:  { label: "Neutral",  color: "#374151" }, // Dark gray
+  tense:    { label: "Tense",    color: "#facc15" }, // Yellow
+  hostile:  { label: "Hostile",  color: "#f97316" }, // Orange
+  war:      { label: "War",      color: "#ef4444" }, // Red
 };
