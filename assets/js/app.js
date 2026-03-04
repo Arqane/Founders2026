@@ -4,7 +4,9 @@ import { API_BASE, PLANETS, RELATIONSHIP_STYLES } from "./config.js";
 const nav = document.getElementById("nav");
 const app = document.getElementById("app");
 
-/* ---------- tiny utils ---------- */
+/* =========================================================
+   Utils
+========================================================= */
 
 function escapeHtml(s) {
   return String(s ?? "")
@@ -35,10 +37,11 @@ function getDefaultPlanet() {
   return PLANETS.find((p) => p.id === "test") || PLANETS[0] || null;
 }
 
-/* ---------- Header/Nav ---------- */
+/* =========================================================
+   Header/Nav
+========================================================= */
 
 function tabStyle(isActive) {
-  // Works even if your CSS is unchanged.
   // Active: light gray bg + black text
   // Inactive: black bg + light gray text
   return isActive
@@ -84,7 +87,9 @@ function setNav(planet = null, active = "overview") {
   `;
 }
 
-/* ---------- API ---------- */
+/* =========================================================
+   API
+========================================================= */
 
 async function fetchJson(url) {
   const res = await fetch(url, { cache: "no-store" });
@@ -108,7 +113,9 @@ async function fetchPlanetResources(planetId) {
   return fetchJson(`${API_BASE}?view=resources&planet=${encodeURIComponent(planetId)}&nocache=1`);
 }
 
-/* ---------- Formatting ---------- */
+/* =========================================================
+   Formatting
+========================================================= */
 
 function fmtUsdB(n) {
   if (n === null || n === undefined || n === "") return "—";
@@ -138,7 +145,9 @@ function fmtNum(n, digits = 0) {
   return v.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
-/* ---------- Diplomacy Web + Tooltip + Focus ---------- */
+/* =========================================================
+   Diplomacy Web
+========================================================= */
 
 function legendHtml() {
   const items = Object.entries(RELATIONSHIP_STYLES)
@@ -214,6 +223,9 @@ function diplomacyWebSvgFromEdges(countries, edges) {
         ${nodeGroups}
       </svg>
       <div class="dipTooltip" id="dipTooltip"></div>
+    </div>
+    <div class="small" style="margin-top:8px;">
+      Tip: click a country node to highlight only its connections. Click again to reset.
     </div>
     ${legendHtml()}
   `;
@@ -296,12 +308,28 @@ function attachDiplomacyFocusHandlers() {
   });
 }
 
-/* ---------- Tables ---------- */
+/* =========================================================
+   Expandable ranking tables (Top 10 <-> Full)
+========================================================= */
 
-function rankingsTable(title, rows, fmtFn) {
-  const body = rows?.length
-    ? rows
-        .slice(0, 20)
+// Holds expansion state across renders while staying on same hash.
+const TABLE_EXPANDED = new Set(); // ids like "overview:rgdp" or "trade:imports"
+
+function toggleExpanded(id) {
+  if (TABLE_EXPANDED.has(id)) TABLE_EXPANDED.delete(id);
+  else TABLE_EXPANDED.add(id);
+}
+
+function isExpanded(id) {
+  return TABLE_EXPANDED.has(id);
+}
+
+function expandableRankingsTable({ id, title, rows, fmtFn, hintOn = "Click to expand", hintOff = "Click to collapse", reverseRankLabel = "" }) {
+  const expanded = isExpanded(id);
+  const shown = expanded ? (rows || []) : (rows || []).slice(0, 10);
+
+  const body = shown.length
+    ? shown
         .map(
           (r, i) => `
       <tr>
@@ -314,44 +342,40 @@ function rankingsTable(title, rows, fmtFn) {
         .join("")
     : `<tr><td colspan="3" class="small">No data.</td></tr>`;
 
+  const hint = expanded ? hintOff : hintOn;
+  const extra = reverseRankLabel ? `<div class="small" style="margin-top:6px;">${escapeHtml(reverseRankLabel)}</div>` : "";
+
   return `
-    <div class="card" style="box-shadow:none; border:1px solid #eee;">
-      <h4 style="margin:0 0 10px 0;">${escapeHtml(title)}</h4>
+    <div class="card expTable" data-exp="${escapeHtml(id)}" style="box-shadow:none; border:1px solid #eee; cursor:pointer;">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
+        <h4 style="margin:0 0 10px 0;">${escapeHtml(title)}</h4>
+        <div class="small">${escapeHtml(hint)}</div>
+      </div>
       <table class="table">
         <thead><tr><th class="num">#</th><th>Country</th><th class="num">Value</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
+      ${extra}
     </div>
   `;
 }
 
-function listTable(title, rows, fmtFn) {
-  const body = rows?.length
-    ? rows
-        .slice(0, 40)
-        .map(
-          (r) => `
-      <tr>
-        <td>${escapeHtml(r.name)}</td>
-        <td class="num">${fmtFn(r.value)}</td>
-      </tr>
-    `
-        )
-        .join("")
-    : `<tr><td colspan="2" class="small">No data.</td></tr>`;
-
-  return `
-    <div class="card" style="box-shadow:none; border:1px solid #eee;">
-      <h4 style="margin:0 0 10px 0;">${escapeHtml(title)}</h4>
-      <table class="table">
-        <thead><tr><th>Country</th><th class="num">Value</th></tr></thead>
-        <tbody>${body}</tbody>
-      </table>
-    </div>
-  `;
+function attachExpandableTableHandlers() {
+  const cards = Array.from(document.querySelectorAll(".expTable[data-exp]"));
+  cards.forEach((card) => {
+    card.addEventListener("click", () => {
+      const id = card.getAttribute("data-exp");
+      if (!id) return;
+      toggleExpanded(id);
+      // rerender current route
+      render();
+    });
+  });
 }
 
-/* ---------- Trade visualization + trade rankings ---------- */
+/* =========================================================
+   Trade helpers
+========================================================= */
 
 function topN(items, key, n = 10) {
   return (items || [])
@@ -392,12 +416,13 @@ function rankFromTradeItems(items, key, dir = "desc") {
   const list = (items || [])
     .map((x) => ({ name: x.name, value: Number(x[key]) }))
     .filter((x) => Number.isFinite(x.value));
-
   list.sort((a, b) => (dir === "asc" ? a.value - b.value : b.value - a.value));
   return list;
 }
 
-/* ---------- Resources Pie (SVG with VALUE labels) ---------- */
+/* =========================================================
+   Resources Pie (SVG with VALUE labels)
+========================================================= */
 
 function pieSvg(breakdown, title) {
   const data = (breakdown || []).filter((x) => Number(x.value) > 0);
@@ -432,14 +457,12 @@ function pieSvg(breakdown, title) {
 
     const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
 
-    // VALUE label (not %)
     const mid = (start + end) / 2;
     const lx = cx + (r + 30) * Math.cos(mid);
     const ly = cy + (r + 30) * Math.sin(mid);
     const label = `${String(d.name)}: ${fmtNum(v, 0)}`;
 
     start = end;
-
     return { path, fill: colorFor(i, data.length), lx, ly, label };
   });
 
@@ -459,7 +482,9 @@ function pieSvg(breakdown, title) {
   `;
 }
 
-/* ---------- Views ---------- */
+/* =========================================================
+   Views
+========================================================= */
 
 function viewChoosePlanetSkeleton() {
   const buttons = PLANETS.map(
@@ -501,6 +526,7 @@ function renderApiStatusFail(err) {
 }
 
 function planetHeader(planet, payload) {
+  // IMPORTANT CHANGE: removed Change Planet button
   return `
     <section class="card">
       <div class="hstack" style="justify-content:space-between;">
@@ -510,10 +536,6 @@ function planetHeader(planet, payload) {
           <div class="small" style="margin-top:6px;">
             SheetId: <code>${escapeHtml(payload.spreadsheetId || "—")}</code>
           </div>
-          <div class="small" style="margin-top:6px;">Tip: click a country node to highlight only its connections. Click again to reset.</div>
-        </div>
-        <div class="buttonRow">
-          <button onclick="location.hash='#/'">Change Planet</button>
         </div>
       </div>
     </section>
@@ -540,17 +562,18 @@ function viewPlanetOverview(planet, payload) {
 
     <section class="card">
       <h3 class="sectionTitle">Current-Year Rankings</h3>
+      <p class="small">Click a table to expand/collapse full rankings.</p>
       <div class="grid2">
-        ${rankingsTable("Real GDP", r.rGDP, fmtUsdB)}
-        ${rankingsTable("Real GDP per Capita", r.rGDPpc, (n) => fmtUsd(n, 0))}
-        ${rankingsTable("Real GDP Growth Rate", r.rGDPGrowth, fmtPct)}
-        ${rankingsTable("Unemployment Rate", r.unemployment, fmtPct)}
-        ${rankingsTable("Inflation Rate", r.inflation, fmtPct)}
-        ${rankingsTable("Budget Deficit/Surplus", r.budgetDeficit, fmtUsdB)}
-        ${rankingsTable("National Debt/Fund", r.nationalDebt, fmtUsdB)}
-        ${rankingsTable("Federal Funds Rate", r.fedFundsRate, fmtPct)}
-        ${rankingsTable("Total Population", r.population, (n) => fmtNum(n, 0))}
-        ${listTable("Economic System", r.economicSystem, (v) => escapeHtml(v))}
+        ${expandableRankingsTable({ id:"overview:rgdp", title:"Real GDP", rows:r.rGDP, fmtFn:fmtUsdB })}
+        ${expandableRankingsTable({ id:"overview:rgdppc", title:"Real GDP per Capita", rows:r.rGDPpc, fmtFn:(n)=>fmtUsd(n,0) })}
+        ${expandableRankingsTable({ id:"overview:rgdpgrowth", title:"Real GDP Growth Rate", rows:r.rGDPGrowth, fmtFn:fmtPct })}
+        ${expandableRankingsTable({ id:"overview:unemp", title:"Unemployment Rate", rows:r.unemployment, fmtFn:fmtPct })}
+        ${expandableRankingsTable({ id:"overview:infl", title:"Inflation Rate", rows:r.inflation, fmtFn:fmtPct })}
+        ${expandableRankingsTable({ id:"overview:budget", title:"Budget Deficit/Surplus", rows:r.budgetDeficit, fmtFn:fmtUsdB })}
+        ${expandableRankingsTable({ id:"overview:debt", title:"National Debt/Fund", rows:r.nationalDebt, fmtFn:fmtUsdB })}
+        ${expandableRankingsTable({ id:"overview:ffr", title:"Federal Funds Rate", rows:r.fedFundsRate, fmtFn:fmtPct })}
+        ${expandableRankingsTable({ id:"overview:pop", title:"Total Population", rows:r.population, fmtFn:(n)=>fmtNum(n,0) })}
+        ${expandableRankingsTable({ id:"overview:system", title:"Economic System", rows:r.economicSystem, fmtFn:(v)=>escapeHtml(v) })}
       </div>
     </section>
   `;
@@ -559,26 +582,12 @@ function viewPlanetOverview(planet, payload) {
 function viewTrade(planet, overviewPayload, tradePayload) {
   const items = tradePayload?.trade?.items || [];
 
-  const body = items.length
-    ? items
-        .map(
-          (x) => `
-        <tr>
-          <td>${escapeHtml(x.name)}</td>
-          <td class="num">${fmtNum(x.frequency, 0)}</td>
-          <td class="num">${fmtNum(x.volume, 0)}</td>
-          <td class="num">${fmtUsdB(x.exportValue)}</td>
-          <td class="num">${fmtUsdB(x.importValue)}</td>
-        </tr>
-      `
-        )
-        .join("")
-    : `<tr><td colspan="5" class="small">No trade data.</td></tr>`;
-
-  // Trade rankings:
-  const exportRank = rankFromTradeItems(items, "exportValue", "desc");
-  // IMPORTANT CHANGE: Import ranking reversed so #1 = greatest imports (highest importValue)
-  const importRank = rankFromTradeItems(items, "importValue", "desc");
+  // Rankings lists for expandable tables
+  const freqRank = rankFromTradeItems(items, "frequency", "desc");
+  const volRank = rankFromTradeItems(items, "volume", "desc");
+  const expRank = rankFromTradeItems(items, "exportValue", "desc");
+  // IMPORTANT: Import ranking should be reversed so #1 is greatest imports (highest value)
+  const impRank = rankFromTradeItems(items, "importValue", "desc");
 
   return `
     ${planetHeader(planet, tradePayload)}
@@ -586,38 +595,29 @@ function viewTrade(planet, overviewPayload, tradePayload) {
 
     <section class="card">
       <h3 class="sectionTitle">Trade Overview</h3>
-      <p class="small">Visualization (top 10 per metric).</p>
+      <p class="small">Click a table to expand/collapse full rankings.</p>
       <div class="grid2">
-        ${barChartHtml("Trade Frequency (Top 10)", items, "frequency", (v) => fmtNum(v, 0))}
-        ${barChartHtml("Trade Volume (Top 10)", items, "volume", (v) => fmtNum(v, 0))}
-        ${barChartHtml("Export Value ($B, Top 10)", items, "exportValue", fmtUsdB)}
-        ${barChartHtml("Import Value ($B, Top 10)", items, "importValue", fmtUsdB)}
+        ${expandableRankingsTable({ id:"trade:freq", title:"Trade Frequency", rows:freqRank, fmtFn:(n)=>fmtNum(n,0) })}
+        ${expandableRankingsTable({ id:"trade:vol", title:"Trade Volume", rows:volRank, fmtFn:(n)=>fmtNum(n,0) })}
+        ${expandableRankingsTable({ id:"trade:exports", title:"Export Value ($B)", rows:expRank, fmtFn:fmtUsdB })}
+        ${expandableRankingsTable({
+          id:"trade:imports",
+          title:"Import Value ($B)",
+          rows:impRank,
+          fmtFn:fmtUsdB,
+          reverseRankLabel:"Rank #1 = country with the greatest value of imports."
+        })}
       </div>
-    </section>
 
-    <section class="card">
-      <h3 class="sectionTitle">Trade Rankings</h3>
-      <div class="grid2">
-        ${rankingsTable("Export Value ($B)", exportRank, fmtUsdB)}
-        ${rankingsTable("Import Value ($B) — #1 is highest imports", importRank, fmtUsdB)}
+      <div style="margin-top:14px;">
+        <h4 style="margin:0 0 10px 0;">Trade Visualization (Top 10)</h4>
+        <div class="grid2">
+          ${barChartHtml("Trade Frequency (Top 10)", items, "frequency", (v) => fmtNum(v, 0))}
+          ${barChartHtml("Trade Volume (Top 10)", items, "volume", (v) => fmtNum(v, 0))}
+          ${barChartHtml("Export Value ($B, Top 10)", items, "exportValue", fmtUsdB)}
+          ${barChartHtml("Import Value ($B, Top 10)", items, "importValue", fmtUsdB)}
+        </div>
       </div>
-    </section>
-
-    <section class="card">
-      <h3 class="sectionTitle">Trade Table</h3>
-      <p class="small">From the Trade tab, row 18.</p>
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Country</th>
-            <th class="num">Frequency</th>
-            <th class="num">Volume</th>
-            <th class="num">Export Value ($B)</th>
-            <th class="num">Import Value ($B)</th>
-          </tr>
-        </thead>
-        <tbody>${body}</tbody>
-      </table>
     </section>
   `;
 }
@@ -625,7 +625,6 @@ function viewTrade(planet, overviewPayload, tradePayload) {
 function viewResources(planet, resPayload) {
   const worldTotals = resPayload?.resources?.worldTotals || [];
   const resources = worldTotals.map((x) => x.resource);
-
   const options = resources.map((r) => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
 
   return `
@@ -679,7 +678,9 @@ function viewError(err) {
   `;
 }
 
-/* ---------- Router ---------- */
+/* =========================================================
+   Router
+========================================================= */
 
 async function render() {
   const { path, params } = parseRoute();
@@ -709,6 +710,7 @@ async function render() {
       app.innerHTML = viewPlanetOverview(planet, payload);
       attachDiplomacyTooltipHandlers();
       attachDiplomacyFocusHandlers();
+      attachExpandableTableHandlers();
     } catch (err) {
       console.error(err);
       app.innerHTML = viewError(err);
@@ -732,6 +734,7 @@ async function render() {
       app.innerHTML = viewTrade(planet, overviewPayload, tradePayload);
       attachDiplomacyTooltipHandlers();
       attachDiplomacyFocusHandlers();
+      attachExpandableTableHandlers();
     } catch (err) {
       console.error(err);
       app.innerHTML = viewError(err);
@@ -745,10 +748,9 @@ async function render() {
     app.innerHTML = viewLoading(`Loading Resources • ${planet.label}`);
     try {
       const resPayload = await fetchPlanetResources(planet.id);
-
       if (!resPayload?.ok) throw new Error(resPayload?.error || "Resources ok=false");
 
-      // IMPORTANT CHANGE: no diplomacy web on Resources page
+      // No diplomacy web on resources page
       app.innerHTML = viewResources(planet, resPayload);
       attachResourcesHandlers(resPayload);
     } catch (err) {
