@@ -227,9 +227,14 @@ function diplomacyWebSvgFromEdges(countries, edges) {
       </svg>
       <div class="dipTooltip" id="dipTooltip"></div>
     </div>
+
     <div class="small" style="margin-top:8px;">
+      Hover a line to see: Source → Target + relationship type.
+    </div>
+    <div class="small" style="margin-top:6px;">
       Tip: click a country node to highlight only its connections. Click again to reset.
     </div>
+
     ${legendHtml()}
   `;
 }
@@ -315,8 +320,7 @@ function attachDiplomacyFocusHandlers() {
    Expandable tables WITHOUT page refresh
 ========================================================= */
 
-// Persist expansion state (even across route changes) without re-rendering the whole page on click.
-const TABLE_EXPANDED = new Set(); // ids like "overview:rgdp" or "trade:imports"
+const TABLE_EXPANDED = new Set();
 
 function isExpanded(id) {
   return TABLE_EXPANDED.has(id);
@@ -385,7 +389,6 @@ function attachExpandableTableHandlers() {
     const id = card.getAttribute("data-exp");
     if (!id) return;
 
-    // Only clickable if it has extra rows (otherwise the hint is empty and there's nothing to expand)
     const hasExtra = card.querySelector("tr.extraRow") != null;
     if (!hasExtra) return;
 
@@ -394,13 +397,11 @@ function attachExpandableTableHandlers() {
       card.classList.toggle("expanded", nowExpanded);
       setExpanded(id, nowExpanded);
 
-      // Show/hide extra rows
       const extras = Array.from(card.querySelectorAll("tr.extraRow"));
       extras.forEach((tr) => {
         tr.style.display = nowExpanded ? "" : "none";
       });
 
-      // Update hint text
       const hintEl = card.querySelector(".expHint");
       const onText = card.getAttribute("data-hinton") || "Click to expand";
       const offText = card.getAttribute("data-hintoff") || "Click to collapse";
@@ -410,7 +411,7 @@ function attachExpandableTableHandlers() {
 }
 
 /* =========================================================
-   Trade chart helpers (actual mini bar charts)
+   Trade chart helpers
 ========================================================= */
 
 function topN(items, key, n = 10) {
@@ -427,7 +428,6 @@ function barChartHtml(title, items, key, fmtFn) {
 
   const max = Math.max(...top.map((x) => x._v), 1);
 
-  // Inline styles so it still looks like a chart even if your CSS is minimal.
   const rows = top
     .map((x) => {
       const pct = Math.max(0, Math.min(100, (x._v / max) * 100));
@@ -451,23 +451,41 @@ function barChartHtml(title, items, key, fmtFn) {
   `;
 }
 
-function rankFromTradeItems(items, key, dir = "desc") {
+function rankFromTradeItems(items, key, dir = "desc", useAbs = false) {
   const list = (items || [])
-    .map((x) => ({ name: x.name, value: Number(x[key]) }))
-    .filter((x) => Number.isFinite(x.value));
-  list.sort((a, b) => (dir === "asc" ? a.value - b.value : b.value - a.value));
-  return list;
+    .map((x) => {
+      const v = Number(x[key]);
+      if (!Number.isFinite(v)) return null;
+      return { name: x.name, value: v, sortValue: useAbs ? Math.abs(v) : v };
+    })
+    .filter(Boolean);
+
+  list.sort((a, b) => (dir === "asc" ? a.sortValue - b.sortValue : b.sortValue - a.sortValue));
+
+  // Keep original value for formatting
+  return list.map(({ name, value }) => ({ name, value }));
 }
 
 /* =========================================================
-   Resources Pie (SVG with VALUE labels)
+   Resources: Pie + legend table with slice colors
 ========================================================= */
 
-function pieSvg(breakdown, title) {
-  const data = (breakdown || []).filter((x) => Number(x.value) > 0);
-  const total = data.reduce((s, x) => s + Number(x.value || 0), 0);
+function pieColorForIndex(i, n) {
+  const hue = Math.round((360 * i) / Math.max(1, n));
+  return `hsl(${hue} 70% 55%)`;
+}
+
+function pieSvgWithLegend(breakdown, title) {
+  const data = (breakdown || [])
+    .map((x) => ({ name: String(x.name || ""), value: Number(x.value) }))
+    .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0);
+
+  const total = data.reduce((s, x) => s + x.value, 0);
   if (!data.length || total <= 0) {
-    return `<div class="small">No countries possess this resource (or all values are 0).</div>`;
+    return {
+      pieHtml: `<div class="small">No countries possess this resource (or all values are 0).</div>`,
+      legendHtml: "",
+    };
   }
 
   const W = 560;
@@ -476,16 +494,10 @@ function pieSvg(breakdown, title) {
   const cy = 190;
   const r = 125;
 
-  function colorFor(i, n) {
-    const hue = Math.round((360 * i) / Math.max(1, n));
-    return `hsl(${hue} 70% 55%)`;
-  }
-
   let start = -Math.PI / 2;
 
   const slices = data.map((d, i) => {
-    const v = Number(d.value);
-    const ang = (v / total) * Math.PI * 2;
+    const ang = (d.value / total) * Math.PI * 2;
     const end = start + ang;
 
     const x1 = cx + r * Math.cos(start);
@@ -499,58 +511,52 @@ function pieSvg(breakdown, title) {
     const mid = (start + end) / 2;
     const lx = cx + (r + 30) * Math.cos(mid);
     const ly = cy + (r + 30) * Math.sin(mid);
-    const label = `${String(d.name)}: ${fmtNum(v, 0)}`;
+    const label = `${d.name}: ${fmtNum(d.value, 0)}`;
+
+    const color = pieColorForIndex(i, data.length);
 
     start = end;
-    return { path, fill: colorFor(i, data.length), lx, ly, label };
+    return { path, color, lx, ly, label };
   });
 
-  return `
+  const pieHtml = `
     <div class="card" style="box-shadow:none; border:1px solid #eee;">
       <h4 style="margin:0 0 10px 0;">${escapeHtml(title)}</h4>
       <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Resource pie chart">
-        ${slices.map((s) => `<path d="${s.path}" fill="${s.fill}" opacity="0.95"></path>`).join("")}
+        ${slices.map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95"></path>`).join("")}
         ${slices
-          .map(
-            (s) =>
-              `<text x="${s.lx}" y="${s.ly}" font-size="11" text-anchor="middle">${escapeHtml(s.label)}</text>`
-          )
+          .map((s) => `<text x="${s.lx}" y="${s.ly}" font-size="11" text-anchor="middle">${escapeHtml(s.label)}</text>`)
           .join("")}
       </svg>
     </div>
   `;
-}
 
-function resourceCountryListHtml(resourceName, breakdown) {
-  const data = (breakdown || [])
-    .map((x) => ({ name: String(x.name || ""), value: Number(x.value) }))
-    .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0)
-    .sort((a, b) => b.value - a.value);
-
-  if (!data.length) {
-    return `<div class="small">No countries possess <strong>${escapeHtml(resourceName)}</strong>.</div>`;
-  }
-
-  const body = data
-    .map(
-      (x) => `
-      <tr>
-        <td>${escapeHtml(x.name)}</td>
-        <td class="num">${fmtNum(x.value, 0)}</td>
-      </tr>
-    `
-    )
+  const legendRows = data
+    .map((d, i) => {
+      const color = pieColorForIndex(i, data.length);
+      return `
+        <tr>
+          <td style="width:26px;">
+            <span style="display:inline-block;width:14px;height:14px;border-radius:4px;background:${color};"></span>
+          </td>
+          <td>${escapeHtml(d.name)}</td>
+          <td class="num">${fmtNum(d.value, 0)}</td>
+        </tr>
+      `;
+    })
     .join("");
 
-  return `
+  const legendHtml = `
     <div class="card" style="box-shadow:none; border:1px solid #eee; margin-top:12px;">
-      <h4 style="margin:0 0 10px 0;">${escapeHtml(resourceName)} — Countries</h4>
+      <h4 style="margin:0 0 10px 0;">Legend</h4>
       <table class="table">
-        <thead><tr><th>Country</th><th class="num">Amount</th></tr></thead>
-        <tbody>${body}</tbody>
+        <thead><tr><th></th><th>Country</th><th class="num">Amount</th></tr></thead>
+        <tbody>${legendRows}</tbody>
       </table>
     </div>
   `;
+
+  return { pieHtml, legendHtml };
 }
 
 /* =========================================================
@@ -597,7 +603,6 @@ function renderApiStatusFail(err) {
 }
 
 function planetHeader(planet, payload) {
-  // No Change Planet button
   return `
     <section class="card">
       <div class="hstack" style="justify-content:space-between;">
@@ -619,7 +624,6 @@ function diplomacySectionFromPayload(payload) {
   return `
     <section class="card">
       <h3 class="sectionTitle">Diplomacy Web</h3>
-      <p class="small">Hover a line to see: Source → Target + relationship type.</p>
       ${diplomacyWebSvgFromEdges(countries, edges)}
     </section>
   `;
@@ -656,8 +660,9 @@ function viewTrade(planet, overviewPayload, tradePayload) {
   const freqRank = rankFromTradeItems(items, "frequency", "desc");
   const volRank = rankFromTradeItems(items, "volume", "desc");
   const expRank = rankFromTradeItems(items, "exportValue", "desc");
-  // Rank #1 = greatest imports (highest importValue)
-  const impRank = rankFromTradeItems(items, "importValue", "desc");
+
+  // IMPORTANT: order Import Value by ABSOLUTE VALUE (largest magnitude first)
+  const impRankAbs = rankFromTradeItems(items, "importValue", "desc", true);
 
   return `
     ${planetHeader(planet, tradePayload)}
@@ -671,13 +676,7 @@ function viewTrade(planet, overviewPayload, tradePayload) {
         ${expandableRankingsTable({ id: "trade:freq", title: "Trade Frequency", rows: freqRank, fmtFn: (n) => fmtNum(n, 0) })}
         ${expandableRankingsTable({ id: "trade:vol", title: "Trade Volume", rows: volRank, fmtFn: (n) => fmtNum(n, 0) })}
         ${expandableRankingsTable({ id: "trade:exports", title: "Export Value ($B)", rows: expRank, fmtFn: fmtUsdB })}
-        ${expandableRankingsTable({
-          id: "trade:imports",
-          title: "Import Value ($B)",
-          rows: impRank,
-          fmtFn: fmtUsdB,
-          note: "Rank #1 = country with the greatest value of imports.",
-        })}
+        ${expandableRankingsTable({ id: "trade:imports", title: "Import Value ($B)", rows: impRankAbs, fmtFn: fmtUsdB })}
       </div>
 
       <div style="margin-top:14px;">
@@ -710,7 +709,7 @@ function viewResources(planet, resPayload) {
 
       <div id="resTotals" class="small" style="margin-top:10px;"></div>
       <div id="resPie" style="margin-top:12px;"></div>
-      <div id="resList" style="margin-top:12px;"></div>
+      <div id="resLegend" style="margin-top:12px;"></div>
     </section>
   `;
 }
@@ -719,8 +718,8 @@ function attachResourcesHandlers(resPayload) {
   const sel = document.getElementById("resSelect");
   const totalsEl = document.getElementById("resTotals");
   const pieEl = document.getElementById("resPie");
-  const listEl = document.getElementById("resList");
-  if (!sel || !totalsEl || !pieEl || !listEl) return;
+  const legendEl = document.getElementById("resLegend");
+  if (!sel || !totalsEl || !pieEl || !legendEl) return;
 
   const worldTotals = resPayload?.resources?.worldTotals || [];
   const breakdownByResource = resPayload?.resources?.breakdownByResource || {};
@@ -729,9 +728,12 @@ function attachResourcesHandlers(resPayload) {
   function render(resource) {
     const total = totalMap.get(resource);
     totalsEl.innerHTML = `World total: <strong>${fmtNum(total, 0)}</strong>`;
+
     const breakdown = breakdownByResource[resource] || [];
-    pieEl.innerHTML = pieSvg(breakdown, `${resource} holdings by country (labels show values)`);
-    listEl.innerHTML = resourceCountryListHtml(resource, breakdown);
+    const { pieHtml, legendHtml } = pieSvgWithLegend(breakdown, `${resource} holdings by country (labels show values)`);
+
+    pieEl.innerHTML = pieHtml;
+    legendEl.innerHTML = legendHtml;
   }
 
   render(sel.value);
@@ -827,7 +829,6 @@ async function render() {
       const resPayload = await fetchPlanetResources(planet.id);
       if (!resPayload?.ok) throw new Error(resPayload?.error || "Resources ok=false");
 
-      // No diplomacy web on resources page
       app.innerHTML = viewResources(planet, resPayload);
       attachResourcesHandlers(resPayload);
     } catch (err) {
