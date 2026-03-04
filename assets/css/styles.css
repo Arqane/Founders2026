@@ -151,3 +151,11 @@ a.inline:hover { text-decoration:underline; }
 .dipTooltip { pointer-events: none; }
 
 .dipTooltip { pointer-events: none; } /* prevents tooltip “stealing” hover */
+
+.num { text-align: right; white-space: nowrap; }
+.table td.num, .table th.num { white-space: nowrap; }
+
+.barChart { width: 100%; overflow-x: auto; }
+.barRow { display: grid; grid-template-columns: 180px 1fr 120px; gap: 10px; align-items: center; margin: 6px 0; }
+.barTrack { height: 12px; background: rgba(255,255,255,0.10); border-radius: 999px; overflow: hidden; }
+.barFill { height: 100%; background: rgba(255,255,255,0.65); }
