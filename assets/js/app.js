@@ -35,31 +35,52 @@ function getDefaultPlanet() {
   return PLANETS.find((p) => p.id === "test") || PLANETS[0] || null;
 }
 
+/* ---------- Header/Nav ---------- */
+
+function tabStyle(isActive) {
+  // Works even if your CSS is unchanged.
+  // Active: light gray bg + black text
+  // Inactive: black bg + light gray text
+  return isActive
+    ? "background:#e5e7eb;color:#111827;border:1px solid #e5e7eb;"
+    : "background:#111827;color:#e5e7eb;border:1px solid #374151;";
+}
+
 function setNav(planet = null, active = "overview") {
-  const planetCrumb = planet
-    ? `<a href="#/planet?planet=${encodeURIComponent(planet.id)}">${planet.label}</a>`
-    : "";
+  const left = `
+    <a class="siteTitle" href="#/" style="font-weight:800; letter-spacing:0.2px; text-decoration:none;">
+      Founders
+    </a>
+  `;
 
   const tabs = planet
     ? `
-    <span class="navTabs">
-      <a class="navTab ${active === "overview" ? "active" : ""}" href="#/planet?planet=${encodeURIComponent(
-        planet.id
-      )}">Overview</a>
-      <a class="navTab ${active === "trade" ? "active" : ""}" href="#/trade?planet=${encodeURIComponent(
-        planet.id
-      )}">Trade</a>
-      <a class="navTab ${active === "resources" ? "active" : ""}" href="#/resources?planet=${encodeURIComponent(
-        planet.id
-      )}">Resources</a>
-    </span>
+    <div class="navTabs" style="display:flex; gap:10px; align-items:center;">
+      <a class="navTab" href="#/planet?planet=${encodeURIComponent(planet.id)}"
+         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "overview")}">
+        Overview
+      </a>
+      <a class="navTab" href="#/trade?planet=${encodeURIComponent(planet.id)}"
+         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "trade")}">
+        Trade
+      </a>
+      <a class="navTab" href="#/resources?planet=${encodeURIComponent(planet.id)}"
+         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "resources")}">
+        Resources
+      </a>
+    </div>
   `
     : "";
 
   nav.innerHTML = `
-    <a href="#/">Choose Planet</a>
-    ${planetCrumb}
-    ${tabs}
+    <div class="headerBar" style="display:flex; justify-content:space-between; align-items:center; gap:14px;">
+      <div class="headerLeft" style="display:flex; align-items:center; gap:10px;">
+        ${left}
+      </div>
+      <div class="headerRight">
+        ${tabs}
+      </div>
+    </div>
   `;
 }
 
@@ -89,7 +110,6 @@ async function fetchPlanetResources(planetId) {
 
 /* ---------- Formatting ---------- */
 
-// Monetary: always "$...B" (no wrap intended)
 function fmtUsdB(n) {
   if (n === null || n === undefined || n === "") return "—";
   const v = Number(n);
@@ -97,7 +117,6 @@ function fmtUsdB(n) {
   return `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}B`;
 }
 
-// Monetary: "$..."
 function fmtUsd(n, digits = 0) {
   if (n === null || n === undefined || n === "") return "—";
   const v = Number(n);
@@ -281,13 +300,18 @@ function attachDiplomacyFocusHandlers() {
 
 function rankingsTable(title, rows, fmtFn) {
   const body = rows?.length
-    ? rows.slice(0, 20).map((r, i) => `
+    ? rows
+        .slice(0, 20)
+        .map(
+          (r, i) => `
       <tr>
         <td class="num">${i + 1}</td>
         <td>${escapeHtml(r.name)}</td>
         <td class="num">${fmtFn(r.value)}</td>
       </tr>
-    `).join("")
+    `
+        )
+        .join("")
     : `<tr><td colspan="3" class="small">No data.</td></tr>`;
 
   return `
@@ -303,12 +327,17 @@ function rankingsTable(title, rows, fmtFn) {
 
 function listTable(title, rows, fmtFn) {
   const body = rows?.length
-    ? rows.slice(0, 40).map((r) => `
+    ? rows
+        .slice(0, 40)
+        .map(
+          (r) => `
       <tr>
         <td>${escapeHtml(r.name)}</td>
         <td class="num">${fmtFn(r.value)}</td>
       </tr>
-    `).join("")
+    `
+        )
+        .join("")
     : `<tr><td colspan="2" class="small">No data.</td></tr>`;
 
   return `
@@ -322,7 +351,7 @@ function listTable(title, rows, fmtFn) {
   `;
 }
 
-/* ---------- Trade visualization ---------- */
+/* ---------- Trade visualization + trade rankings ---------- */
 
 function topN(items, key, n = 10) {
   return (items || [])
@@ -359,7 +388,16 @@ function barChartHtml(title, items, key, fmtFn) {
   `;
 }
 
-/* ---------- Resources Pie (SVG) ---------- */
+function rankFromTradeItems(items, key, dir = "desc") {
+  const list = (items || [])
+    .map((x) => ({ name: x.name, value: Number(x[key]) }))
+    .filter((x) => Number.isFinite(x.value));
+
+  list.sort((a, b) => (dir === "asc" ? a.value - b.value : b.value - a.value));
+  return list;
+}
+
+/* ---------- Resources Pie (SVG with VALUE labels) ---------- */
 
 function pieSvg(breakdown, title) {
   const data = (breakdown || []).filter((x) => Number(x.value) > 0);
@@ -398,24 +436,12 @@ function pieSvg(breakdown, title) {
     const mid = (start + end) / 2;
     const lx = cx + (r + 30) * Math.cos(mid);
     const ly = cy + (r + 30) * Math.sin(mid);
-
     const label = `${String(d.name)}: ${fmtNum(v, 0)}`;
 
     start = end;
 
     return { path, fill: colorFor(i, data.length), lx, ly, label };
   });
-
-  // small legend
-  const legend = data
-    .slice(0, 12)
-    .map((d, i) => {
-      return `<div class="small">
-        <span style="display:inline-block;width:10px;height:10px;background:${colorFor(i, data.length)};border-radius:2px;margin-right:6px;"></span>
-        ${escapeHtml(d.name)} — <strong>${fmtNum(d.value, 0)}</strong>
-      </div>`;
-    })
-    .join("");
 
   return `
     <div class="card" style="box-shadow:none; border:1px solid #eee;">
@@ -429,8 +455,6 @@ function pieSvg(breakdown, title) {
           )
           .join("")}
       </svg>
-      <div style="margin-top:10px;">${legend}</div>
-      ${data.length > 12 ? `<div class="small" style="margin-top:6px;">(+${data.length - 12} more countries not shown in legend)</div>` : ""}
     </div>
   `;
 }
@@ -551,6 +575,11 @@ function viewTrade(planet, overviewPayload, tradePayload) {
         .join("")
     : `<tr><td colspan="5" class="small">No trade data.</td></tr>`;
 
+  // Trade rankings:
+  const exportRank = rankFromTradeItems(items, "exportValue", "desc");
+  // IMPORTANT CHANGE: Import ranking reversed so #1 = greatest imports (highest importValue)
+  const importRank = rankFromTradeItems(items, "importValue", "desc");
+
   return `
     ${planetHeader(planet, tradePayload)}
     ${diplomacySectionFromPayload(overviewPayload)}
@@ -563,6 +592,14 @@ function viewTrade(planet, overviewPayload, tradePayload) {
         ${barChartHtml("Trade Volume (Top 10)", items, "volume", (v) => fmtNum(v, 0))}
         ${barChartHtml("Export Value ($B, Top 10)", items, "exportValue", fmtUsdB)}
         ${barChartHtml("Import Value ($B, Top 10)", items, "importValue", fmtUsdB)}
+      </div>
+    </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">Trade Rankings</h3>
+      <div class="grid2">
+        ${rankingsTable("Export Value ($B)", exportRank, fmtUsdB)}
+        ${rankingsTable("Import Value ($B) — #1 is highest imports", importRank, fmtUsdB)}
       </div>
     </section>
 
@@ -585,7 +622,7 @@ function viewTrade(planet, overviewPayload, tradePayload) {
   `;
 }
 
-function viewResources(planet, overviewPayload, resPayload) {
+function viewResources(planet, resPayload) {
   const worldTotals = resPayload?.resources?.worldTotals || [];
   const resources = worldTotals.map((x) => x.resource);
 
@@ -593,7 +630,6 @@ function viewResources(planet, overviewPayload, resPayload) {
 
   return `
     ${planetHeader(planet, resPayload)}
-    ${diplomacySectionFromPayload(overviewPayload)}
 
     <section class="card">
       <h3 class="sectionTitle">Resources</h3>
@@ -708,17 +744,12 @@ async function render() {
     setNav(planet, "resources");
     app.innerHTML = viewLoading(`Loading Resources • ${planet.label}`);
     try {
-      const [overviewPayload, resPayload] = await Promise.all([
-        fetchPlanetOverview(planet.id),
-        fetchPlanetResources(planet.id),
-      ]);
+      const resPayload = await fetchPlanetResources(planet.id);
 
-      if (!overviewPayload?.ok) throw new Error(overviewPayload?.error || "Overview ok=false");
       if (!resPayload?.ok) throw new Error(resPayload?.error || "Resources ok=false");
 
-      app.innerHTML = viewResources(planet, overviewPayload, resPayload);
-      attachDiplomacyTooltipHandlers();
-      attachDiplomacyFocusHandlers();
+      // IMPORTANT CHANGE: no diplomacy web on Resources page
+      app.innerHTML = viewResources(planet, resPayload);
       attachResourcesHandlers(resPayload);
     } catch (err) {
       console.error(err);
