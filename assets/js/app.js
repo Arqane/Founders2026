@@ -4,6 +4,8 @@ import { API_BASE, PLANETS, RELATIONSHIP_STYLES } from "./config.js";
 const nav = document.getElementById("nav");
 const app = document.getElementById("app");
 
+/* ---------- tiny utils ---------- */
+
 function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
@@ -22,11 +24,15 @@ function parseRoute() {
 function findPlanet(planetIdOrLabel) {
   if (!planetIdOrLabel) return null;
   const key = planetIdOrLabel.toLowerCase();
-  return PLANETS.find(p => p.id === key) || PLANETS.find(p => p.label.toLowerCase() === key) || null;
+  return (
+    PLANETS.find((p) => p.id === key) ||
+    PLANETS.find((p) => p.label.toLowerCase() === key) ||
+    null
+  );
 }
 
 function getDefaultPlanet() {
-  return PLANETS.find(p => p.id === "test") || PLANETS[0] || null;
+  return PLANETS.find((p) => p.id === "test") || PLANETS[0] || null;
 }
 
 function setNav(planet = null, active = "overview") {
@@ -34,13 +40,21 @@ function setNav(planet = null, active = "overview") {
     ? `<a href="#/planet?planet=${encodeURIComponent(planet.id)}">${planet.label}</a>`
     : "";
 
-  const tabs = planet ? `
+  const tabs = planet
+    ? `
     <span class="navTabs">
-      <a class="navTab ${active==="overview"?"active":""}" href="#/planet?planet=${encodeURIComponent(planet.id)}">Overview</a>
-      <a class="navTab ${active==="trade"?"active":""}" href="#/trade?planet=${encodeURIComponent(planet.id)}">Trade</a>
-      <a class="navTab ${active==="resources"?"active":""}" href="#/resources?planet=${encodeURIComponent(planet.id)}">Resources</a>
+      <a class="navTab ${active === "overview" ? "active" : ""}" href="#/planet?planet=${encodeURIComponent(
+        planet.id
+      )}">Overview</a>
+      <a class="navTab ${active === "trade" ? "active" : ""}" href="#/trade?planet=${encodeURIComponent(
+        planet.id
+      )}">Trade</a>
+      <a class="navTab ${active === "resources" ? "active" : ""}" href="#/resources?planet=${encodeURIComponent(
+        planet.id
+      )}">Resources</a>
     </span>
-  ` : "";
+  `
+    : "";
 
   nav.innerHTML = `
     <a href="#/">Choose Planet</a>
@@ -75,6 +89,7 @@ async function fetchPlanetResources(planetId) {
 
 /* ---------- Formatting ---------- */
 
+// Monetary: always "$...B" (no wrap intended)
 function fmtUsdB(n) {
   if (n === null || n === undefined || n === "") return "—";
   const v = Number(n);
@@ -82,6 +97,7 @@ function fmtUsdB(n) {
   return `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}B`;
 }
 
+// Monetary: "$..."
 function fmtUsd(n, digits = 0) {
   if (n === null || n === undefined || n === "") return "—";
   const v = Number(n);
@@ -106,9 +122,9 @@ function fmtNum(n, digits = 0) {
 /* ---------- Diplomacy Web + Tooltip + Focus ---------- */
 
 function legendHtml() {
-  const items = Object.entries(RELATIONSHIP_STYLES).map(([, v]) =>
-    `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
-  ).join("");
+  const items = Object.entries(RELATIONSHIP_STYLES)
+    .map(([, v]) => `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`)
+    .join("");
   return `<div class="graphLegend">${items}</div>`;
 }
 
@@ -118,8 +134,8 @@ function edgeTooltipText(edge) {
   const rel = String(edge?.relationship || "").trim();
   const st = String(edge?.status || "").trim();
 
-  const line1 = (aName && bName) ? `${aName} → ${bName}` : "";
-  const line2 = rel ? (st ? `${rel} (${st})` : rel) : (st ? st : "");
+  const line1 = aName && bName ? `${aName} → ${bName}` : "";
+  const line2 = rel ? (st ? `${rel} (${st})` : rel) : st ? st : "";
 
   if (line1 && line2) return `${line1}\n${line2}`;
   return line1 || line2 || "";
@@ -140,31 +156,37 @@ function diplomacyWebSvgFromEdges(countries, edges) {
     return { ...c, x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
   });
 
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const nodeMap = new Map(nodes.map((nn) => [nn.id, nn]));
 
-  const edgeLines = (edges || []).map(e => {
-    const A = nodeMap.get(e.aId);
-    const B = nodeMap.get(e.bId);
-    if (!A || !B) return "";
-    const style = RELATIONSHIP_STYLES[e.key] || RELATIONSHIP_STYLES.neutral;
+  const edgeLines = (edges || [])
+    .map((e) => {
+      const A = nodeMap.get(e.aId);
+      const B = nodeMap.get(e.bId);
+      if (!A || !B) return "";
+      const style = RELATIONSHIP_STYLES[e.key] || RELATIONSHIP_STYLES.neutral;
 
-    const tip = edgeTooltipText(e);
-    const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
+      const tip = edgeTooltipText(e);
+      const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
 
-    return `<line class="dipEdge" ${tipAttr}
-      data-aid="${escapeHtml(e.aId)}" data-bid="${escapeHtml(e.bId)}"
-      x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
-      x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
-      stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
-  }).join("");
+      return `<line class="dipEdge" ${tipAttr}
+        data-aid="${escapeHtml(e.aId)}" data-bid="${escapeHtml(e.bId)}"
+        x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
+        x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
+        stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
+    })
+    .join("");
 
-  const nodeGroups = nodes.map(n => `
-    <g class="dipNode" data-id="${escapeHtml(n.id)}">
-      <circle class="nodeCircle" cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="18" fill="rgba(255,255,255,0.08)"></circle>
-      <circle class="nodeDot" cx="${n.x.toFixed(2)}" cy="${n.y.toFixed(2)}" r="12" fill="rgba(255,255,255,0.85)"></circle>
-      <text class="nodeLabel" x="${n.x.toFixed(2)}" y="${(n.y + 34).toFixed(2)}" text-anchor="middle">${escapeHtml(n.name)}</text>
-    </g>
-  `).join("");
+  const nodeGroups = nodes
+    .map(
+      (nn) => `
+      <g class="dipNode" data-id="${escapeHtml(nn.id)}">
+        <circle class="nodeCircle" cx="${nn.x.toFixed(2)}" cy="${nn.y.toFixed(2)}" r="18" fill="rgba(255,255,255,0.08)"></circle>
+        <circle class="nodeDot" cx="${nn.x.toFixed(2)}" cy="${nn.y.toFixed(2)}" r="12" fill="rgba(255,255,255,0.85)"></circle>
+        <text class="nodeLabel" x="${nn.x.toFixed(2)}" y="${(nn.y + 34).toFixed(2)}" text-anchor="middle">${escapeHtml(nn.name)}</text>
+      </g>
+    `
+    )
+    .join("");
 
   return `
     <div class="graphWrap" id="dipWrap">
@@ -192,7 +214,9 @@ function attachDiplomacyTooltipHandlers() {
     tip.style.top = `${e.clientY - rect.top}px`;
   }
 
-  function hideTip() { tip.classList.remove("show"); }
+  function hideTip() {
+    tip.classList.remove("show");
+  }
 
   svg.addEventListener("mousemove", (e) => {
     const t = e.target;
@@ -217,26 +241,26 @@ function attachDiplomacyFocusHandlers() {
     const nodes = Array.from(svg.querySelectorAll(".dipNode"));
 
     if (!focusedId) {
-      edges.forEach(el => el.classList.remove("dim"));
-      nodes.forEach(el => el.classList.remove("dim", "focused"));
+      edges.forEach((el) => el.classList.remove("dim"));
+      nodes.forEach((el) => el.classList.remove("dim", "focused"));
       return;
     }
 
     const neighbors = new Set([focusedId]);
-    edges.forEach(el => {
+    edges.forEach((el) => {
       const a = el.dataset.aid;
       const b = el.dataset.bid;
       if (a === focusedId) neighbors.add(b);
       if (b === focusedId) neighbors.add(a);
     });
 
-    edges.forEach(el => {
+    edges.forEach((el) => {
       const a = el.dataset.aid;
       const b = el.dataset.bid;
       el.classList.toggle("dim", !(a === focusedId || b === focusedId));
     });
 
-    nodes.forEach(el => {
+    nodes.forEach((el) => {
       const id = el.dataset.id;
       const keep = neighbors.has(id);
       el.classList.toggle("dim", !keep);
@@ -248,7 +272,7 @@ function attachDiplomacyFocusHandlers() {
     const g = e.target?.closest?.(".dipNode");
     if (!g) return;
     const id = g.dataset.id;
-    focusedId = (focusedId === id) ? null : id;
+    focusedId = focusedId === id ? null : id;
     applyFocus();
   });
 }
@@ -258,12 +282,12 @@ function attachDiplomacyFocusHandlers() {
 function rankingsTable(title, rows, fmtFn) {
   const body = rows?.length
     ? rows.slice(0, 20).map((r, i) => `
-        <tr>
-          <td class="num">${i + 1}</td>
-          <td>${escapeHtml(r.name)}</td>
-          <td class="num">${fmtFn(r.value)}</td>
-        </tr>
-      `).join("")
+      <tr>
+        <td class="num">${i + 1}</td>
+        <td>${escapeHtml(r.name)}</td>
+        <td class="num">${fmtFn(r.value)}</td>
+      </tr>
+    `).join("")
     : `<tr><td colspan="3" class="small">No data.</td></tr>`;
 
   return `
@@ -280,11 +304,11 @@ function rankingsTable(title, rows, fmtFn) {
 function listTable(title, rows, fmtFn) {
   const body = rows?.length
     ? rows.slice(0, 40).map((r) => `
-        <tr>
-          <td>${escapeHtml(r.name)}</td>
-          <td class="num">${fmtFn(r.value)}</td>
-        </tr>
-      `).join("")
+      <tr>
+        <td>${escapeHtml(r.name)}</td>
+        <td class="num">${fmtFn(r.value)}</td>
+      </tr>
+    `).join("")
     : `<tr><td colspan="2" class="small">No data.</td></tr>`;
 
   return `
@@ -302,8 +326,8 @@ function listTable(title, rows, fmtFn) {
 
 function topN(items, key, n = 10) {
   return (items || [])
-    .map(x => ({ ...x, _v: Number(x[key]) }))
-    .filter(x => Number.isFinite(x._v))
+    .map((x) => ({ ...x, _v: Number(x[key]) }))
+    .filter((x) => Number.isFinite(x._v))
     .sort((a, b) => b._v - a._v)
     .slice(0, n);
 }
@@ -312,18 +336,20 @@ function barChartHtml(title, items, key, fmtFn) {
   const top = topN(items, key, 10);
   if (!top.length) return `<div class="small">No data for ${escapeHtml(title)}.</div>`;
 
-  const max = Math.max(...top.map(x => x._v), 1);
+  const max = Math.max(...top.map((x) => x._v), 1);
 
-  const rows = top.map(x => {
-    const pct = Math.max(0, Math.min(100, (x._v / max) * 100));
-    return `
-      <div class="barRow">
-        <div class="small">${escapeHtml(x.name)}</div>
-        <div class="barTrack"><div class="barFill" style="width:${pct.toFixed(1)}%"></div></div>
-        <div class="small num">${fmtFn(x._v)}</div>
-      </div>
-    `;
-  }).join("");
+  const rows = top
+    .map((x) => {
+      const pct = Math.max(0, Math.min(100, (x._v / max) * 100));
+      return `
+        <div class="barRow">
+          <div class="small">${escapeHtml(x.name)}</div>
+          <div class="barTrack"><div class="barFill" style="width:${pct.toFixed(1)}%"></div></div>
+          <div class="small num">${fmtFn(x._v)}</div>
+        </div>
+      `;
+    })
+    .join("");
 
   return `
     <div class="card" style="box-shadow:none; border:1px solid #eee;">
@@ -333,11 +359,87 @@ function barChartHtml(title, items, key, fmtFn) {
   `;
 }
 
+/* ---------- Resources Pie (SVG) ---------- */
+
+function pieSvg(breakdown, title) {
+  const data = (breakdown || []).filter((x) => Number(x.value) > 0);
+  const total = data.reduce((s, x) => s + Number(x.value || 0), 0);
+  if (!data.length || total <= 0) {
+    return `<div class="small">No countries possess this resource (or all values are 0).</div>`;
+  }
+
+  const W = 560;
+  const H = 380;
+  const cx = 190;
+  const cy = 190;
+  const r = 125;
+
+  function colorFor(i, n) {
+    const hue = Math.round((360 * i) / Math.max(1, n));
+    return `hsl(${hue} 70% 55%)`;
+  }
+
+  let start = -Math.PI / 2;
+
+  const slices = data.map((d, i) => {
+    const v = Number(d.value);
+    const ang = (v / total) * Math.PI * 2;
+    const end = start + ang;
+
+    const x1 = cx + r * Math.cos(start);
+    const y1 = cy + r * Math.sin(start);
+    const x2 = cx + r * Math.cos(end);
+    const y2 = cy + r * Math.sin(end);
+    const large = ang > Math.PI ? 1 : 0;
+
+    const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+
+    // VALUE label (not %)
+    const mid = (start + end) / 2;
+    const lx = cx + (r + 30) * Math.cos(mid);
+    const ly = cy + (r + 30) * Math.sin(mid);
+
+    const label = `${String(d.name)}: ${fmtNum(v, 0)}`;
+
+    start = end;
+
+    return { path, fill: colorFor(i, data.length), lx, ly, label };
+  });
+
+  // small legend
+  const legend = data
+    .slice(0, 12)
+    .map((d, i) => {
+      return `<div class="small">
+        <span style="display:inline-block;width:10px;height:10px;background:${colorFor(i, data.length)};border-radius:2px;margin-right:6px;"></span>
+        ${escapeHtml(d.name)} — <strong>${fmtNum(d.value, 0)}</strong>
+      </div>`;
+    })
+    .join("");
+
+  return `
+    <div class="card" style="box-shadow:none; border:1px solid #eee;">
+      <h4 style="margin:0 0 10px 0;">${escapeHtml(title)}</h4>
+      <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Resource pie chart">
+        ${slices.map((s) => `<path d="${s.path}" fill="${s.fill}" opacity="0.95"></path>`).join("")}
+        ${slices
+          .map(
+            (s) =>
+              `<text x="${s.lx}" y="${s.ly}" font-size="11" text-anchor="middle">${escapeHtml(s.label)}</text>`
+          )
+          .join("")}
+      </svg>
+      <div style="margin-top:10px;">${legend}</div>
+      ${data.length > 12 ? `<div class="small" style="margin-top:6px;">(+${data.length - 12} more countries not shown in legend)</div>` : ""}
+    </div>
+  `;
+}
+
 /* ---------- Views ---------- */
 
 function viewChoosePlanetSkeleton() {
-  const buttons = PLANETS.map(p =>
-    `<button onclick="location.hash='#/planet?planet=${encodeURIComponent(p.id)}'">${p.label}</button>`
+  const buttons = PLANETS.map(
+    (p) => `<button onclick="location.hash='#/planet?planet=${encodeURIComponent(p.id)}'">${p.label}</button>`
   ).join("");
 
   return `
@@ -433,15 +535,21 @@ function viewPlanetOverview(planet, payload) {
 function viewTrade(planet, overviewPayload, tradePayload) {
   const items = tradePayload?.trade?.items || [];
 
-  const body = items.length ? items.map(x => `
-    <tr>
-      <td>${escapeHtml(x.name)}</td>
-      <td class="num">${fmtNum(x.frequency, 0)}</td>
-      <td class="num">${fmtNum(x.volume, 0)}</td>
-      <td class="num">${fmtUsdB(x.exportValue)}</td>
-      <td class="num">${fmtUsdB(x.importValue)}</td>
-    </tr>
-  `).join("") : `<tr><td colspan="5" class="small">No trade data.</td></tr>`;
+  const body = items.length
+    ? items
+        .map(
+          (x) => `
+        <tr>
+          <td>${escapeHtml(x.name)}</td>
+          <td class="num">${fmtNum(x.frequency, 0)}</td>
+          <td class="num">${fmtNum(x.volume, 0)}</td>
+          <td class="num">${fmtUsdB(x.exportValue)}</td>
+          <td class="num">${fmtUsdB(x.importValue)}</td>
+        </tr>
+      `
+        )
+        .join("")
+    : `<tr><td colspan="5" class="small">No trade data.</td></tr>`;
 
   return `
     ${planetHeader(planet, tradePayload)}
@@ -479,9 +587,9 @@ function viewTrade(planet, overviewPayload, tradePayload) {
 
 function viewResources(planet, overviewPayload, resPayload) {
   const worldTotals = resPayload?.resources?.worldTotals || [];
-  const breakdownByResource = resPayload?.resources?.breakdownByResource || {};
-  const resources = worldTotals.map(x => x.resource);
-  const options = resources.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
+  const resources = worldTotals.map((x) => x.resource);
+
+  const options = resources.map((r) => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join("");
 
   return `
     ${planetHeader(planet, resPayload)}
@@ -500,22 +608,21 @@ function viewResources(planet, overviewPayload, resPayload) {
   `;
 }
 
-function attachResourcesHandlers(payload) {
+function attachResourcesHandlers(resPayload) {
   const sel = document.getElementById("resSelect");
   const totalsEl = document.getElementById("resTotals");
   const pieEl = document.getElementById("resPie");
   if (!sel || !totalsEl || !pieEl) return;
 
-  const worldTotals = payload?.resources?.worldTotals || [];
-  const breakdownByResource = payload?.resources?.breakdownByResource || {};
-  const totalMap = new Map(worldTotals.map(x => [x.resource, x.total]));
+  const worldTotals = resPayload?.resources?.worldTotals || [];
+  const breakdownByResource = resPayload?.resources?.breakdownByResource || {};
+  const totalMap = new Map(worldTotals.map((x) => [x.resource, x.total]));
 
   function render(resource) {
     const total = totalMap.get(resource);
     totalsEl.innerHTML = `World total: <strong>${fmtNum(total, 0)}</strong>`;
     const breakdown = breakdownByResource[resource] || [];
-    // pieSvg omitted here to keep file shorter; keep your existing Resources pieSvg if already in your version
-    pieEl.innerHTML = `<div class="small">Pie chart already implemented in your version — keep that block unchanged.</div>`;
+    pieEl.innerHTML = pieSvg(breakdown, `${resource} holdings by country (labels show values)`);
   }
 
   render(sel.value);
@@ -582,6 +689,7 @@ async function render() {
         fetchPlanetOverview(planet.id),
         fetchPlanetTrade(planet.id),
       ]);
+
       if (!overviewPayload?.ok) throw new Error(overviewPayload?.error || "Overview ok=false");
       if (!tradePayload?.ok) throw new Error(tradePayload?.error || "Trade ok=false");
 
@@ -604,6 +712,7 @@ async function render() {
         fetchPlanetOverview(planet.id),
         fetchPlanetResources(planet.id),
       ]);
+
       if (!overviewPayload?.ok) throw new Error(overviewPayload?.error || "Overview ok=false");
       if (!resPayload?.ok) throw new Error(resPayload?.error || "Resources ok=false");
 
@@ -615,6 +724,20 @@ async function render() {
       console.error(err);
       app.innerHTML = viewError(err);
     }
+    return;
+  }
+
+  // Profiles later
+  if (path === "/country") {
+    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
+    setNav(planet, "overview");
+    app.innerHTML = `
+      <section class="card">
+        <h2 class="heroTitle">Country profile (coming later)</h2>
+        <p class="small">We’ll build profiles after Overview/Trade/Resources are done.</p>
+        <p><a class="inline" href="#/planet?planet=${encodeURIComponent(planet.id)}">Back to planet</a></p>
+      </section>
+    `;
     return;
   }
 
