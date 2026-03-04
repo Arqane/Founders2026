@@ -11,6 +11,17 @@ export const PLANETS = [
   { id: "octavium", label: "Octavium", spreadsheetId: "1v4dM17_x9aWs5bb6TF64JbSvcf3VOcn3fsEnQyTK7_k" },
 ];
 
+// Planets to show on the HOME GDP pie grid (2x2). (Exclude TEST.)
+export const HOME_PLANET_IDS = ["parallax", "cyqs", "sevyr", "octavium"];
+
+// GDP pie behavior (used on home page)
+export const HOME_GDP_PIE = {
+  // Any slice below this fraction of total GDP can be grouped into "Other"
+  groupOtherBelowFraction: 0.03, // 3%
+  // Also group if more than this number of slices
+  maxSlicesBeforeGrouping: 10,
+};
+
 // Diplomacy relationship styles
 export const RELATIONSHIP_STYLES = {
   ally:     { label: "Ally",     color: "#2563eb" }, // Blue
