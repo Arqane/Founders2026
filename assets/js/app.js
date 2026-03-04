@@ -12,7 +12,8 @@ function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 function parseRoute() {
@@ -35,6 +36,19 @@ function findPlanet(planetIdOrLabel) {
 
 function getDefaultPlanet() {
   return PLANETS.find((p) => p.id === "test") || PLANETS[0] || null;
+}
+
+function yearTitleFromPayload(payload) {
+  // Prefer explicit year number; fall back to parsing "Year 3" from yearSheet.
+  const y = payload?.year;
+  if (Number.isFinite(Number(y))) return `Year ${Number(y)}`;
+  const ys = String(payload?.yearSheet || "").trim();
+  const m = ys.match(/Year\s+(\d+)/i);
+  if (m) return `Year ${Number(m[1])}`;
+  const yt = String(payload?.yearTokenDisplay || "").trim();
+  const m2 = yt.match(/Y(\d+)/i);
+  if (m2) return `Year ${Number(m2[1])}`;
+  return "Year";
 }
 
 /* =========================================================
@@ -146,7 +160,7 @@ function fmtNum(n, digits = 0) {
 }
 
 /* =========================================================
-   Diplomacy Web
+   Diplomacy Web (centered)
 ========================================================= */
 
 function legendHtml() {
@@ -176,7 +190,6 @@ function diplomacyWebSvgFromEdges(countries, edges) {
   const n = countries.length;
   if (n < 2) return `<div class="small">No diplomacy data yet for this planet.</div>`;
 
-  // Keep the same viewBox but CENTER the SVG block responsively
   const W = 900;
   const H = 520;
   const cx = W / 2;
@@ -417,28 +430,36 @@ function attachExpandableTableHandlers() {
    Trade chart helpers
 ========================================================= */
 
-function topN(items, key, n = 10) {
+function topN(items, key, n = 10, useAbs = false) {
   return (items || [])
-    .map((x) => ({ ...x, _v: Number(x[key]) }))
-    .filter((x) => Number.isFinite(x._v))
-    .sort((a, b) => b._v - a._v)
+    .map((x) => {
+      const v = Number(x[key]);
+      if (!Number.isFinite(v)) return null;
+      return { ...x, _v: v, _sv: useAbs ? Math.abs(v) : v };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b._sv - a._sv)
     .slice(0, n);
 }
 
-function barChartHtml(title, items, key, fmtFn) {
-  const top = topN(items, key, 10);
+function barChartHtml(title, items, key, fmtFn, useAbs = false) {
+  const top = topN(items, key, 10, useAbs);
   if (!top.length) return `<div class="small">No data for ${escapeHtml(title)}.</div>`;
 
-  const max = Math.max(...top.map((x) => x._v), 1);
+  const max = Math.max(...top.map((x) => x._sv), 1);
 
   const rows = top
     .map((x) => {
-      const pct = Math.max(0, Math.min(100, (x._v / max) * 100));
+      const pct = Math.max(0, Math.min(100, (x._sv / max) * 100));
       return `
         <div class="barRow" style="display:grid; grid-template-columns: 1fr 2.2fr auto; gap:10px; align-items:center; margin:8px 0;">
-          <div class="small" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(x.name)}</div>
+          <div class="small" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(
+            x.name
+          )}</div>
           <div class="barTrack" style="height:10px; border-radius:999px; background:rgba(148,163,184,0.25); overflow:hidden;">
-            <div class="barFill" style="height:100%; width:${pct.toFixed(1)}%; background:rgba(148,163,184,0.95);"></div>
+            <div class="barFill" style="height:100%; width:${pct.toFixed(
+              1
+            )}%; background:rgba(148,163,184,0.95);"></div>
           </div>
           <div class="small num" style="white-space:nowrap; text-align:right;">${fmtFn(x._v)}</div>
         </div>
@@ -468,7 +489,7 @@ function rankFromTradeItems(items, key, dir = "desc", useAbs = false) {
 }
 
 /* =========================================================
-   Resources: bigger centered chart + narrower legend
+   Resources (bigger centered pie + compact legend)
 ========================================================= */
 
 function pieColorForIndex(i, n) {
@@ -487,7 +508,6 @@ function pieRender(breakdown, title) {
     return { pieHtml: `<div class="small">No countries possess this resource (or all values are 0).</div>`, legendHtml: "" };
   }
 
-  // LARGER PIE
   const W = 720;
   const H = 480;
   const cx = W / 2;
@@ -533,7 +553,6 @@ function pieRender(breakdown, title) {
     </div>
   `;
 
-  // NARROWER, MORE COMPACT LEGEND (so it doesn't dominate)
   const legendRows = data
     .map((d, i) => {
       const color = pieColorForIndex(i, data.length);
@@ -606,15 +625,13 @@ function renderApiStatusFail(err) {
 }
 
 function planetHeader(planet, payload) {
+  // Removed Sheet ID line entirely
   return `
     <section class="card">
       <div class="hstack" style="justify-content:space-between;">
         <div>
           <h2 class="heroTitle">${escapeHtml(planet.label)}</h2>
           <div class="small">Live from API • ${escapeHtml(payload.yearTokenDisplay || "")} • ${escapeHtml(payload.yearSheet || "")}</div>
-          <div class="small" style="margin-top:6px;">
-            SheetId: <code>${escapeHtml(payload.spreadsheetId || "—")}</code>
-          </div>
         </div>
       </div>
     </section>
@@ -634,12 +651,13 @@ function diplomacySectionFromPayload(payload) {
 
 function viewPlanetOverview(planet, payload) {
   const r = payload?.rankings || {};
+  const yTitle = yearTitleFromPayload(payload);
   return `
     ${planetHeader(planet, payload)}
     ${diplomacySectionFromPayload(payload)}
 
     <section class="card">
-      <h3 class="sectionTitle">Current-Year Rankings</h3>
+      <h3 class="sectionTitle">${escapeHtml(yTitle)} Rankings</h3>
       <p class="small">Click any table to expand/collapse full rankings (no page refresh).</p>
       <div class="grid2">
         ${expandableRankingsTable({ id: "overview:rgdp", title: "Real GDP", rows: r.rGDP, fmtFn: fmtUsdB })}
@@ -659,6 +677,7 @@ function viewPlanetOverview(planet, payload) {
 
 function viewTrade(planet, overviewPayload, tradePayload) {
   const items = tradePayload?.trade?.items || [];
+  const yTitle = yearTitleFromPayload(tradePayload);
 
   const freqRank = rankFromTradeItems(items, "frequency", "desc", false);
   const volRank = rankFromTradeItems(items, "volume", "desc", false);
@@ -672,7 +691,7 @@ function viewTrade(planet, overviewPayload, tradePayload) {
     ${diplomacySectionFromPayload(overviewPayload)}
 
     <section class="card">
-      <h3 class="sectionTitle">Trade Overview</h3>
+      <h3 class="sectionTitle">${escapeHtml(yTitle)} Trade Overview</h3>
       <p class="small">Click any table to expand/collapse full rankings (no page refresh).</p>
 
       <div class="grid2">
@@ -688,7 +707,8 @@ function viewTrade(planet, overviewPayload, tradePayload) {
           ${barChartHtml("Trade Frequency", items, "frequency", (v) => fmtNum(v, 0))}
           ${barChartHtml("Trade Volume", items, "volume", (v) => fmtNum(v, 0))}
           ${barChartHtml("Export Value ($B)", items, "exportValue", fmtUsdB)}
-          ${barChartHtml("Import Value ($B)", items, "importValue", fmtUsdB)}
+          <!-- IMPORTANT: imports chart uses ABS for bar lengths so negatives render correctly -->
+          ${barChartHtml("Import Value ($B)", items, "importValue", fmtUsdB, true)}
         </div>
       </div>
     </section>
