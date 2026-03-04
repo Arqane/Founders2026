@@ -151,7 +151,10 @@ function fmtNum(n, digits = 0) {
 
 function legendHtml() {
   const items = Object.entries(RELATIONSHIP_STYLES)
-    .map(([, v]) => `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`)
+    .map(
+      ([, v]) =>
+        `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
+    )
     .join("");
   return `<div class="graphLegend">${items}</div>`;
 }
@@ -309,53 +312,69 @@ function attachDiplomacyFocusHandlers() {
 }
 
 /* =========================================================
-   Expandable ranking tables (Top 10 <-> Full)
+   Expandable tables WITHOUT page refresh
 ========================================================= */
 
-// Holds expansion state across renders while staying on same hash.
+// Persist expansion state (even across route changes) without re-rendering the whole page on click.
 const TABLE_EXPANDED = new Set(); // ids like "overview:rgdp" or "trade:imports"
-
-function toggleExpanded(id) {
-  if (TABLE_EXPANDED.has(id)) TABLE_EXPANDED.delete(id);
-  else TABLE_EXPANDED.add(id);
-}
 
 function isExpanded(id) {
   return TABLE_EXPANDED.has(id);
 }
 
-function expandableRankingsTable({ id, title, rows, fmtFn, hintOn = "Click to expand", hintOff = "Click to collapse", reverseRankLabel = "" }) {
+function setExpanded(id, expanded) {
+  if (expanded) TABLE_EXPANDED.add(id);
+  else TABLE_EXPANDED.delete(id);
+}
+
+function expandableRankingsTable({
+  id,
+  title,
+  rows,
+  fmtFn,
+  hintOn = "Click to expand",
+  hintOff = "Click to collapse",
+  note = "",
+}) {
   const expanded = isExpanded(id);
-  const shown = expanded ? (rows || []) : (rows || []).slice(0, 10);
+  const list = Array.isArray(rows) ? rows : [];
+  const hasExtra = list.length > 10;
 
-  const body = shown.length
-    ? shown
-        .map(
-          (r, i) => `
-      <tr>
-        <td class="num">${i + 1}</td>
-        <td>${escapeHtml(r.name)}</td>
-        <td class="num">${fmtFn(r.value)}</td>
-      </tr>
-    `
-        )
-        .join("")
-    : `<tr><td colspan="3" class="small">No data.</td></tr>`;
+  const body =
+    list.length > 0
+      ? list
+          .map((r, i) => {
+            const extra = i >= 10;
+            const hiddenStyle = extra && !expanded ? 'style="display:none;"' : "";
+            const extraClass = extra ? "extraRow" : "";
+            return `
+              <tr class="${extraClass}" ${hiddenStyle}>
+                <td class="num">${i + 1}</td>
+                <td>${escapeHtml(r.name)}</td>
+                <td class="num">${fmtFn(r.value)}</td>
+              </tr>
+            `;
+          })
+          .join("")
+      : `<tr><td colspan="3" class="small">No data.</td></tr>`;
 
-  const hint = expanded ? hintOff : hintOn;
-  const extra = reverseRankLabel ? `<div class="small" style="margin-top:6px;">${escapeHtml(reverseRankLabel)}</div>` : "";
+  const hintText = !hasExtra ? "" : expanded ? hintOff : hintOn;
+  const noteHtml = note ? `<div class="small" style="margin-top:6px;">${escapeHtml(note)}</div>` : "";
 
   return `
-    <div class="card expTable" data-exp="${escapeHtml(id)}" style="box-shadow:none; border:1px solid #eee; cursor:pointer;">
+    <div class="card expTable ${expanded ? "expanded" : ""}" data-exp="${escapeHtml(
+      id
+    )}" data-hinton="${escapeHtml(hintOn)}" data-hintoff="${escapeHtml(hintOff)}"
+      style="box-shadow:none; border:1px solid #eee; ${hasExtra ? "cursor:pointer;" : ""}">
       <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
         <h4 style="margin:0 0 10px 0;">${escapeHtml(title)}</h4>
-        <div class="small">${escapeHtml(hint)}</div>
+        <div class="small expHint">${escapeHtml(hintText)}</div>
       </div>
       <table class="table">
         <thead><tr><th class="num">#</th><th>Country</th><th class="num">Value</th></tr></thead>
         <tbody>${body}</tbody>
       </table>
-      ${extra}
+      ${noteHtml}
     </div>
   `;
 }
@@ -363,18 +382,35 @@ function expandableRankingsTable({ id, title, rows, fmtFn, hintOn = "Click to ex
 function attachExpandableTableHandlers() {
   const cards = Array.from(document.querySelectorAll(".expTable[data-exp]"));
   cards.forEach((card) => {
+    const id = card.getAttribute("data-exp");
+    if (!id) return;
+
+    // Only clickable if it has extra rows (otherwise the hint is empty and there's nothing to expand)
+    const hasExtra = card.querySelector("tr.extraRow") != null;
+    if (!hasExtra) return;
+
     card.addEventListener("click", () => {
-      const id = card.getAttribute("data-exp");
-      if (!id) return;
-      toggleExpanded(id);
-      // rerender current route
-      render();
+      const nowExpanded = !card.classList.contains("expanded");
+      card.classList.toggle("expanded", nowExpanded);
+      setExpanded(id, nowExpanded);
+
+      // Show/hide extra rows
+      const extras = Array.from(card.querySelectorAll("tr.extraRow"));
+      extras.forEach((tr) => {
+        tr.style.display = nowExpanded ? "" : "none";
+      });
+
+      // Update hint text
+      const hintEl = card.querySelector(".expHint");
+      const onText = card.getAttribute("data-hinton") || "Click to expand";
+      const offText = card.getAttribute("data-hintoff") || "Click to collapse";
+      if (hintEl) hintEl.textContent = nowExpanded ? offText : onText;
     });
   });
 }
 
 /* =========================================================
-   Trade helpers
+   Trade chart helpers (actual mini bar charts)
 ========================================================= */
 
 function topN(items, key, n = 10) {
@@ -391,14 +427,17 @@ function barChartHtml(title, items, key, fmtFn) {
 
   const max = Math.max(...top.map((x) => x._v), 1);
 
+  // Inline styles so it still looks like a chart even if your CSS is minimal.
   const rows = top
     .map((x) => {
       const pct = Math.max(0, Math.min(100, (x._v / max) * 100));
       return `
-        <div class="barRow">
-          <div class="small">${escapeHtml(x.name)}</div>
-          <div class="barTrack"><div class="barFill" style="width:${pct.toFixed(1)}%"></div></div>
-          <div class="small num">${fmtFn(x._v)}</div>
+        <div class="barRow" style="display:grid; grid-template-columns: 1fr 2.2fr auto; gap:10px; align-items:center; margin:8px 0;">
+          <div class="small" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(x.name)}</div>
+          <div class="barTrack" style="height:10px; border-radius:999px; background:rgba(148,163,184,0.25); overflow:hidden;">
+            <div class="barFill" style="height:100%; width:${pct.toFixed(1)}%; background:rgba(148,163,184,0.95);"></div>
+          </div>
+          <div class="small num" style="white-space:nowrap; text-align:right;">${fmtFn(x._v)}</div>
         </div>
       `;
     })
@@ -482,6 +521,38 @@ function pieSvg(breakdown, title) {
   `;
 }
 
+function resourceCountryListHtml(resourceName, breakdown) {
+  const data = (breakdown || [])
+    .map((x) => ({ name: String(x.name || ""), value: Number(x.value) }))
+    .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  if (!data.length) {
+    return `<div class="small">No countries possess <strong>${escapeHtml(resourceName)}</strong>.</div>`;
+  }
+
+  const body = data
+    .map(
+      (x) => `
+      <tr>
+        <td>${escapeHtml(x.name)}</td>
+        <td class="num">${fmtNum(x.value, 0)}</td>
+      </tr>
+    `
+    )
+    .join("");
+
+  return `
+    <div class="card" style="box-shadow:none; border:1px solid #eee; margin-top:12px;">
+      <h4 style="margin:0 0 10px 0;">${escapeHtml(resourceName)} — Countries</h4>
+      <table class="table">
+        <thead><tr><th>Country</th><th class="num">Amount</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+  `;
+}
+
 /* =========================================================
    Views
 ========================================================= */
@@ -526,7 +597,7 @@ function renderApiStatusFail(err) {
 }
 
 function planetHeader(planet, payload) {
-  // IMPORTANT CHANGE: removed Change Planet button
+  // No Change Planet button
   return `
     <section class="card">
       <div class="hstack" style="justify-content:space-between;">
@@ -562,18 +633,18 @@ function viewPlanetOverview(planet, payload) {
 
     <section class="card">
       <h3 class="sectionTitle">Current-Year Rankings</h3>
-      <p class="small">Click a table to expand/collapse full rankings.</p>
+      <p class="small">Click any table to expand/collapse full rankings (no page refresh).</p>
       <div class="grid2">
-        ${expandableRankingsTable({ id:"overview:rgdp", title:"Real GDP", rows:r.rGDP, fmtFn:fmtUsdB })}
-        ${expandableRankingsTable({ id:"overview:rgdppc", title:"Real GDP per Capita", rows:r.rGDPpc, fmtFn:(n)=>fmtUsd(n,0) })}
-        ${expandableRankingsTable({ id:"overview:rgdpgrowth", title:"Real GDP Growth Rate", rows:r.rGDPGrowth, fmtFn:fmtPct })}
-        ${expandableRankingsTable({ id:"overview:unemp", title:"Unemployment Rate", rows:r.unemployment, fmtFn:fmtPct })}
-        ${expandableRankingsTable({ id:"overview:infl", title:"Inflation Rate", rows:r.inflation, fmtFn:fmtPct })}
-        ${expandableRankingsTable({ id:"overview:budget", title:"Budget Deficit/Surplus", rows:r.budgetDeficit, fmtFn:fmtUsdB })}
-        ${expandableRankingsTable({ id:"overview:debt", title:"National Debt/Fund", rows:r.nationalDebt, fmtFn:fmtUsdB })}
-        ${expandableRankingsTable({ id:"overview:ffr", title:"Federal Funds Rate", rows:r.fedFundsRate, fmtFn:fmtPct })}
-        ${expandableRankingsTable({ id:"overview:pop", title:"Total Population", rows:r.population, fmtFn:(n)=>fmtNum(n,0) })}
-        ${expandableRankingsTable({ id:"overview:system", title:"Economic System", rows:r.economicSystem, fmtFn:(v)=>escapeHtml(v) })}
+        ${expandableRankingsTable({ id: "overview:rgdp", title: "Real GDP", rows: r.rGDP, fmtFn: fmtUsdB })}
+        ${expandableRankingsTable({ id: "overview:rgdppc", title: "Real GDP per Capita", rows: r.rGDPpc, fmtFn: (n) => fmtUsd(n, 0) })}
+        ${expandableRankingsTable({ id: "overview:rgdpgrowth", title: "Real GDP Growth Rate", rows: r.rGDPGrowth, fmtFn: fmtPct })}
+        ${expandableRankingsTable({ id: "overview:unemp", title: "Unemployment Rate", rows: r.unemployment, fmtFn: fmtPct })}
+        ${expandableRankingsTable({ id: "overview:infl", title: "Inflation Rate", rows: r.inflation, fmtFn: fmtPct })}
+        ${expandableRankingsTable({ id: "overview:budget", title: "Budget Deficit/Surplus", rows: r.budgetDeficit, fmtFn: fmtUsdB })}
+        ${expandableRankingsTable({ id: "overview:debt", title: "National Debt/Fund", rows: r.nationalDebt, fmtFn: fmtUsdB })}
+        ${expandableRankingsTable({ id: "overview:ffr", title: "Federal Funds Rate", rows: r.fedFundsRate, fmtFn: fmtPct })}
+        ${expandableRankingsTable({ id: "overview:pop", title: "Total Population", rows: r.population, fmtFn: (n) => fmtNum(n, 0) })}
+        ${expandableRankingsTable({ id: "overview:system", title: "Economic System", rows: r.economicSystem, fmtFn: (v) => escapeHtml(v) })}
       </div>
     </section>
   `;
@@ -582,11 +653,10 @@ function viewPlanetOverview(planet, payload) {
 function viewTrade(planet, overviewPayload, tradePayload) {
   const items = tradePayload?.trade?.items || [];
 
-  // Rankings lists for expandable tables
   const freqRank = rankFromTradeItems(items, "frequency", "desc");
   const volRank = rankFromTradeItems(items, "volume", "desc");
   const expRank = rankFromTradeItems(items, "exportValue", "desc");
-  // IMPORTANT: Import ranking should be reversed so #1 is greatest imports (highest value)
+  // Rank #1 = greatest imports (highest importValue)
   const impRank = rankFromTradeItems(items, "importValue", "desc");
 
   return `
@@ -595,27 +665,28 @@ function viewTrade(planet, overviewPayload, tradePayload) {
 
     <section class="card">
       <h3 class="sectionTitle">Trade Overview</h3>
-      <p class="small">Click a table to expand/collapse full rankings.</p>
+      <p class="small">Click any table to expand/collapse full rankings (no page refresh).</p>
+
       <div class="grid2">
-        ${expandableRankingsTable({ id:"trade:freq", title:"Trade Frequency", rows:freqRank, fmtFn:(n)=>fmtNum(n,0) })}
-        ${expandableRankingsTable({ id:"trade:vol", title:"Trade Volume", rows:volRank, fmtFn:(n)=>fmtNum(n,0) })}
-        ${expandableRankingsTable({ id:"trade:exports", title:"Export Value ($B)", rows:expRank, fmtFn:fmtUsdB })}
+        ${expandableRankingsTable({ id: "trade:freq", title: "Trade Frequency", rows: freqRank, fmtFn: (n) => fmtNum(n, 0) })}
+        ${expandableRankingsTable({ id: "trade:vol", title: "Trade Volume", rows: volRank, fmtFn: (n) => fmtNum(n, 0) })}
+        ${expandableRankingsTable({ id: "trade:exports", title: "Export Value ($B)", rows: expRank, fmtFn: fmtUsdB })}
         ${expandableRankingsTable({
-          id:"trade:imports",
-          title:"Import Value ($B)",
-          rows:impRank,
-          fmtFn:fmtUsdB,
-          reverseRankLabel:"Rank #1 = country with the greatest value of imports."
+          id: "trade:imports",
+          title: "Import Value ($B)",
+          rows: impRank,
+          fmtFn: fmtUsdB,
+          note: "Rank #1 = country with the greatest value of imports.",
         })}
       </div>
 
       <div style="margin-top:14px;">
-        <h4 style="margin:0 0 10px 0;">Trade Visualization (Top 10)</h4>
+        <h4 style="margin:0 0 10px 0;">Trade Charts (Top 10)</h4>
         <div class="grid2">
-          ${barChartHtml("Trade Frequency (Top 10)", items, "frequency", (v) => fmtNum(v, 0))}
-          ${barChartHtml("Trade Volume (Top 10)", items, "volume", (v) => fmtNum(v, 0))}
-          ${barChartHtml("Export Value ($B, Top 10)", items, "exportValue", fmtUsdB)}
-          ${barChartHtml("Import Value ($B, Top 10)", items, "importValue", fmtUsdB)}
+          ${barChartHtml("Trade Frequency", items, "frequency", (v) => fmtNum(v, 0))}
+          ${barChartHtml("Trade Volume", items, "volume", (v) => fmtNum(v, 0))}
+          ${barChartHtml("Export Value ($B)", items, "exportValue", fmtUsdB)}
+          ${barChartHtml("Import Value ($B)", items, "importValue", fmtUsdB)}
         </div>
       </div>
     </section>
@@ -639,6 +710,7 @@ function viewResources(planet, resPayload) {
 
       <div id="resTotals" class="small" style="margin-top:10px;"></div>
       <div id="resPie" style="margin-top:12px;"></div>
+      <div id="resList" style="margin-top:12px;"></div>
     </section>
   `;
 }
@@ -647,7 +719,8 @@ function attachResourcesHandlers(resPayload) {
   const sel = document.getElementById("resSelect");
   const totalsEl = document.getElementById("resTotals");
   const pieEl = document.getElementById("resPie");
-  if (!sel || !totalsEl || !pieEl) return;
+  const listEl = document.getElementById("resList");
+  if (!sel || !totalsEl || !pieEl || !listEl) return;
 
   const worldTotals = resPayload?.resources?.worldTotals || [];
   const breakdownByResource = resPayload?.resources?.breakdownByResource || {};
@@ -658,6 +731,7 @@ function attachResourcesHandlers(resPayload) {
     totalsEl.innerHTML = `World total: <strong>${fmtNum(total, 0)}</strong>`;
     const breakdown = breakdownByResource[resource] || [];
     pieEl.innerHTML = pieSvg(breakdown, `${resource} holdings by country (labels show values)`);
+    listEl.innerHTML = resourceCountryListHtml(resource, breakdown);
   }
 
   render(sel.value);
@@ -707,7 +781,9 @@ async function render() {
     try {
       const payload = await fetchPlanetOverview(planet.id);
       if (!payload?.ok) throw new Error(payload?.error || "API returned ok=false");
+
       app.innerHTML = viewPlanetOverview(planet, payload);
+
       attachDiplomacyTooltipHandlers();
       attachDiplomacyFocusHandlers();
       attachExpandableTableHandlers();
@@ -732,6 +808,7 @@ async function render() {
       if (!tradePayload?.ok) throw new Error(tradePayload?.error || "Trade ok=false");
 
       app.innerHTML = viewTrade(planet, overviewPayload, tradePayload);
+
       attachDiplomacyTooltipHandlers();
       attachDiplomacyFocusHandlers();
       attachExpandableTableHandlers();
