@@ -210,7 +210,6 @@ function diplomacyWebSvgFromEdges(countries, edges) {
       const tip = edgeTooltipText(e);
       const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
 
-      // NOTE: tooltip is present, but handlers will IGNORE .dim edges when focused
       return `<line class="dipEdge" ${tipAttr}
         data-aid="${escapeHtml(e.aId)}" data-bid="${escapeHtml(e.bId)}"
         x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
@@ -276,8 +275,7 @@ function attachDiplomacyTooltipHandlers() {
 
   svg.addEventListener("mousemove", (e) => {
     const t = e.target;
-
-    // Only show tooltip for non-dim edges
+    // ✅ Only show tooltip for non-dim edges (when focused, dim edges will not pop up)
     if (t && t.classList && t.classList.contains("dipEdge") && t.dataset?.tip) {
       if (t.classList.contains("dim")) {
         hideTip();
@@ -586,6 +584,146 @@ function pieRender(breakdown, title) {
 }
 
 /* =========================================================
+   Home page GDP pies (2x2) — one per planet (exclude TEST)
+========================================================= */
+
+function gdpBreakdownFromPlanetPayload(payload, topNCount = 10) {
+  const r = payload?.rankings?.rGDP;
+  const list = Array.isArray(r) ? r : [];
+
+  const rows = list
+    .map((x) => ({ name: String(x.name || "").trim(), value: Number(x.value) }))
+    .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  const total = rows.reduce((s, x) => s + x.value, 0);
+
+  const top = rows.slice(0, topNCount);
+  const restSum = rows.slice(topNCount).reduce((s, x) => s + x.value, 0);
+  if (restSum > 0) top.push({ name: "Other", value: restSum });
+
+  return { total, breakdown: top };
+}
+
+function gdpPieCardHtml({ planetLabel, totalGdp, breakdown }) {
+  // Smallish pie per planet (fits 2x2)
+  const data = (breakdown || [])
+    .map((d) => ({ name: d.name, value: Number(d.value) }))
+    .filter((d) => d.name && Number.isFinite(d.value) && d.value > 0);
+
+  if (!data.length || !(totalGdp > 0)) {
+    return `
+      <div class="card" style="box-shadow:none; border:1px solid #eee;">
+        <h4 style="margin:0 0 4px 0;">${escapeHtml(planetLabel)}</h4>
+        <div class="small">Global GDP: —</div>
+        <div class="small" style="margin-top:10px;">No GDP data.</div>
+      </div>
+    `;
+  }
+
+  const W = 420;
+  const H = 300;
+  const cx = W / 2;
+  const cy = H / 2 + 6;
+  const r = 110;
+
+  let start = -Math.PI / 2;
+
+  const slices = data.map((d, i) => {
+    const ang = (d.value / totalGdp) * Math.PI * 2;
+    const end = start + ang;
+
+    const x1 = cx + r * Math.cos(start);
+    const y1 = cy + r * Math.sin(start);
+    const x2 = cx + r * Math.cos(end);
+    const y2 = cy + r * Math.sin(end);
+    const large = ang > Math.PI ? 1 : 0;
+
+    const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+    const color = pieColorForIndex(i, data.length);
+
+    // Labels: keep readable — show top slices only (exclude "Other" label if too busy)
+    const mid = (start + end) / 2;
+    const lx = cx + (r + 26) * Math.cos(mid);
+    const ly = cy + (r + 26) * Math.sin(mid);
+    const label =
+      d.name === "Other"
+        ? `Other: ${fmtUsdB(d.value)}`
+        : `${d.name}: ${fmtUsdB(d.value)}`;
+
+    start = end;
+    return { path, color, lx, ly, label };
+  });
+
+  // Reduce label count if there are too many slices
+  const labelEvery = data.length > 12 ? 2 : 1;
+
+  return `
+    <div class="card" style="box-shadow:none; border:1px solid #eee;">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
+        <h4 style="margin:0 0 2px 0;">${escapeHtml(planetLabel)}</h4>
+      </div>
+      <div class="small" style="margin-bottom:8px;">Global GDP: <strong>${escapeHtml(fmtUsdB(totalGdp))}</strong></div>
+      <div style="display:flex; justify-content:center;">
+        <svg style="display:block; max-width:100%; height:auto;"
+             width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
+             role="img" aria-label="${escapeHtml(planetLabel)} GDP pie chart">
+          ${slices.map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95"></path>`).join("")}
+          ${slices
+            .map((s, idx) => {
+              if (idx % labelEvery !== 0) return "";
+              return `<text x="${s.lx}" y="${s.ly}" font-size="11" text-anchor="middle">${escapeHtml(s.label)}</text>`;
+            })
+            .join("")}
+        </svg>
+      </div>
+      <div class="small" style="text-align:center; margin-top:6px;">Country shares (labels show values)</div>
+    </div>
+  `;
+}
+
+async function renderHomeGdpPies() {
+  const grid = document.getElementById("homeGdpGrid");
+  if (!grid) return;
+
+  // 2x2 should be Parallax, Cyq`s, Sevyr, Octavium (exclude TEST)
+  const planetsForGrid = PLANETS.filter((p) => p.id !== "test").slice(0, 4);
+
+  grid.innerHTML = `<div class="small">Loading GDP pies…</div>`;
+
+  try {
+    const payloads = await Promise.all(
+      planetsForGrid.map((p) => fetchPlanetOverview(p.id).catch((err) => ({ ok: false, error: err?.message || String(err) })))
+    );
+
+    const cards = payloads.map((pl, idx) => {
+      const planetLabel = planetsForGrid[idx]?.label || "Planet";
+      if (!pl?.ok) {
+        return `
+          <div class="card" style="box-shadow:none; border:1px solid #ef4444;">
+            <h4 style="margin:0 0 4px 0;">${escapeHtml(planetLabel)}</h4>
+            <div class="small">Couldn’t load GDP.</div>
+            <div class="small" style="margin-top:8px;"><strong>Error:</strong> ${escapeHtml(pl?.error || "Unknown error")}</div>
+          </div>
+        `;
+      }
+
+      const { total, breakdown } = gdpBreakdownFromPlanetPayload(pl, 10);
+      return gdpPieCardHtml({ planetLabel, totalGdp: total, breakdown });
+    });
+
+    grid.innerHTML = `<div class="grid2">${cards.join("")}</div>`;
+  } catch (err) {
+    grid.innerHTML = `
+      <div class="card" style="box-shadow:none; border:1px solid #ef4444;">
+        <h4 style="margin:0 0 6px 0;">GDP pies failed</h4>
+        <div class="small">${escapeHtml(err?.message || String(err))}</div>
+      </div>
+    `;
+  }
+}
+
+/* =========================================================
    Views
 ========================================================= */
 
@@ -600,6 +738,12 @@ function viewChoosePlanetSkeleton() {
       <p class="small">Connecting to live data…</p>
       <div class="buttonRow">${buttons}</div>
       <div id="apiStatus" style="margin-top:14px;"></div>
+    </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">Global GDP by Planet</h3>
+      <p class="small">One pie per planet (2×2). Title = planet name. Subtitle = global GDP.</p>
+      <div id="homeGdpGrid" style="margin-top:12px;"></div>
     </section>
   `;
 }
@@ -685,7 +829,6 @@ function viewTrade(planet, overviewPayload, tradePayload) {
   const freqRank = rankFromTradeItems(items, "frequency", "desc", false);
   const volRank = rankFromTradeItems(items, "volume", "desc", false);
   const expRank = rankFromTradeItems(items, "exportValue", "desc", false);
-
   const impRankAbs = rankFromTradeItems(items, "importValue", "desc", true);
 
   return `
@@ -792,6 +935,7 @@ async function render() {
   if (path === "/" || path === "") {
     setNav(null);
     app.innerHTML = viewChoosePlanetSkeleton();
+
     const statusEl = document.getElementById("apiStatus");
     try {
       const payload = await fetchApiHealth();
@@ -800,6 +944,10 @@ async function render() {
       statusEl.innerHTML = renderApiStatusFail(err);
       console.error(err);
     }
+
+    // ✅ Add GDP pies (2x2) under planet selection
+    renderHomeGdpPies();
+
     return;
   }
 
