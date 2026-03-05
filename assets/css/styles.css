@@ -159,3 +159,179 @@ a.inline:hover { text-decoration:underline; }
 .barRow { display: grid; grid-template-columns: 180px 1fr 120px; gap: 10px; align-items: center; margin: 6px 0; }
 .barTrack { height: 12px; background: rgba(255,255,255,0.10); border-radius: 999px; overflow: hidden; }
 .barFill { height: 100%; background: rgba(255,255,255,0.65); }
+
+/* =========================================================
+   Home GDP pies + Resources layout improvements
+   ========================================================= */
+
+.homeGrid2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 900px) { .homeGrid2x2 { grid-template-columns: 1fr; } }
+
+.homePlanetCard {
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.06);
+  border: 1px solid #eee;
+}
+
+.homePlanetHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.homePlanetTitle { margin: 0; font-size: 16px; }
+.homePlanetSubtitle { font-size: 12px; color: #444; white-space: nowrap; }
+
+.homePieRow {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 12px;
+  align-items: center;
+}
+@media (max-width: 900px) { .homePieRow { grid-template-columns: 1fr; } }
+
+.homePieBox {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.homePieBox canvas,
+.homePieBox svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.homeLegendBox {
+  max-height: 220px; /* keep grid tidy even with many countries */
+  overflow: auto;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 8px;
+  background: #fff;
+}
+
+.legendTable { width: 100%; border-collapse: collapse; font-size: 12px; }
+.legendTable td { padding: 6px 6px; border-bottom: 1px solid #eee; vertical-align: middle; }
+.legendTable tr:last-child td { border-bottom: none; }
+.legendSwatchBox { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 8px; border: 1px solid rgba(0,0,0,.15); }
+.legendName { font-weight: 600; }
+.legendVal { text-align: right; white-space: nowrap; color: #333; }
+
+/* Resources page layout */
+.resourcesLayout {
+  display: grid;
+  grid-template-columns: 1.25fr 0.75fr;
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 900px) { .resourcesLayout { grid-template-columns: 1fr; } }
+
+.resourcesPieBox {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.resourcesPieBox canvas,
+.resourcesPieBox svg {
+  max-width: min(640px, 100%);
+  height: auto;
+}
+
+.resourcesLegendBox {
+  max-height: 640px;
+  overflow: auto;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 8px;
+  background: #fff;
+}
+
+/* =========================================================
+   Modal (click-to-enlarge GDP pies)
+   ========================================================= */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.55);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 9999;
+}
+
+.modalOverlay.show {
+  display: flex;
+}
+
+.modalCard {
+  width: min(1100px, 100%);
+  max-height: min(90vh, 900px);
+  overflow: hidden;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.35);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.25);
+  display: flex;
+  flex-direction: column;
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.modalTitleWrap { display: flex; flex-direction: column; gap: 4px; }
+.modalTitle { font-size: 16px; font-weight: 800; }
+.modalSubtitle { font-size: 12px; color: #444; }
+
+.modalClose {
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.modalClose:hover { background: #f0f2f7; }
+
+.modalBody {
+  padding: 14px 16px 16px 16px;
+  overflow: auto;
+}
+
+.modalGrid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .modalGrid { grid-template-columns: 1fr; }
+}
+
+.modalPie {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.modalPie svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.modalLegend {
+  max-height: 70vh;
+  overflow: auto;
+}
