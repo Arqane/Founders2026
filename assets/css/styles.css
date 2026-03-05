@@ -88,13 +88,9 @@ a.inline:hover { text-decoration:underline; }
   padding: 10px;
 }
 
-.graphLegend {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-  justify-content: center;  /* ✅ centers the color key */
-}
+.graphLegend { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+.legendItem { display:flex; gap:8px; align-items:center; font-size: 12px; color:#333; }
+.legendSwatch { width:16px; height:3px; border-radius: 999px; background:#999; }
 
 .nodeLabel { font-size: 12px; fill: #fff; opacity: 0.95; }
 .nodeCircle { stroke: rgba(255,255,255,.35); stroke-width: 2; }
