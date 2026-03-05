@@ -388,3 +388,12 @@ a.inline:hover { text-decoration:underline; }
 }
 
 .legendTitle { margin: 0 0 10px 0; font-size: 14px; font-weight: 800; }
+
+/* Center the diplomacy color key WITHOUT changing existing legend styling */
+.graphLegendWrap {
+  text-align: center;
+}
+
+.graphLegendWrap .graphLegend {
+  display: inline-flex; /* keeps your existing flex layout but allows centering via wrapper */
+}
