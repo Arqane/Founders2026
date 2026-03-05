@@ -61,7 +61,14 @@ a.inline:hover { text-decoration:underline; }
 @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
 
 .heroTitle { margin: 0 0 6px 0; font-size: 22px; }
-.sectionTitle { margin: 0 0 10px 0; font-size: 16px; }
+
+/* Bigger/more distinct subheadings site-wide */
+.sectionTitle {
+  margin: 0 0 12px 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
 
 .flag {
   width: 140px;
@@ -88,15 +95,12 @@ a.inline:hover { text-decoration:underline; }
 .nodeLabel { font-size: 12px; fill: #fff; opacity: 0.95; }
 .nodeCircle { stroke: rgba(255,255,255,.35); stroke-width: 2; }
 
-/* ----- Pie chart + tooltip ----- */
+/* ----- Pie tooltip (used by home + trade + modal) ----- */
 
 .pieWrap {
   position: relative;
   display: inline-block;
-  border: 1px solid #eee;
-  border-radius: 12px;
-  padding: 12px;
-  background: #fff;
+  width: 100%;
 }
 
 .pieTooltip {
@@ -112,10 +116,10 @@ a.inline:hover { text-decoration:underline; }
   box-shadow: 0 6px 18px rgba(0,0,0,.15);
   opacity: 0;
   transition: opacity 80ms linear;
+  z-index: 20;
 }
 
 .pieTooltip.show { opacity: 1; }
-.pieHint { margin-top: 8px; }
 
 /* Diplomacy hover tooltip */
 .graphWrap { position: relative; }
@@ -146,23 +150,14 @@ a.inline:hover { text-decoration:underline; }
 .navTab { margin-left: 10px; opacity: 0.8; text-decoration: none; }
 .navTab.active { opacity: 1; text-decoration: underline; }
 
-.dipNode { cursor: pointer; }
-.dim { opacity: 0.10 !important; }
-.dipTooltip { pointer-events: none; }
-
 .dipTooltip { pointer-events: none; } /* prevents tooltip “stealing” hover */
 
 .num { text-align: right; white-space: nowrap; }
 .table td.num, .table th.num { white-space: nowrap; }
 
-.barChart { width: 100%; overflow-x: auto; }
-.barRow { display: grid; grid-template-columns: 180px 1fr 120px; gap: 10px; align-items: center; margin: 6px 0; }
-.barTrack { height: 12px; background: rgba(255,255,255,0.10); border-radius: 999px; overflow: hidden; }
-.barFill { height: 100%; background: rgba(255,255,255,0.65); }
-
 /* =========================================================
-   Home GDP pies + Resources layout improvements
-   ========================================================= */
+   HOME GDP pies + Trade pie cards
+========================================================= */
 
 .homeGrid2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 900px) { .homeGrid2x2 { grid-template-columns: 1fr; } }
@@ -194,35 +189,97 @@ a.inline:hover { text-decoration:underline; }
 }
 @media (max-width: 900px) { .homePieRow { grid-template-columns: 1fr; } }
 
-.homePieBox {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+.homePieBox { display: flex; justify-content: center; align-items: center; }
+
+.homePieBox svg { max-width: 100%; height: auto; }
+
+/* Trade chart cards (same layout as home pies) */
+.chartCard {
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px;
+  border: 1px solid #eee;
+  box-shadow: 0 2px 12px rgba(0,0,0,.06);
 }
 
-.homePieBox canvas,
-.homePieBox svg {
-  max-width: 100%;
-  height: auto;
-}
+.chartHeader { display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.chartTitle { margin:0; font-size:16px; }
+.chartSubtitle { font-size:12px; color:#444; }
 
-.homeLegendBox {
-  max-height: 220px; /* keep grid tidy even with many countries */
-  overflow: auto;
+.chartRow {
+  display:grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap:12px;
+  align-items:center;
+}
+@media (max-width: 900px) { .chartRow { grid-template-columns: 1fr; } }
+
+.chartPieBox { display:flex; justify-content:center; align-items:center; }
+.chartLegendBox {
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
   border: 1px solid #eee;
   border-radius: 12px;
   padding: 8px;
   background: #fff;
 }
 
-.legendTable { width: 100%; border-collapse: collapse; font-size: 12px; }
-.legendTable td { padding: 6px 6px; border-bottom: 1px solid #eee; vertical-align: middle; }
-.legendTable tr:last-child td { border-bottom: none; }
-.legendSwatchBox { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 8px; border: 1px solid rgba(0,0,0,.15); }
-.legendName { font-weight: 600; }
-.legendVal { text-align: right; white-space: nowrap; color: #333; }
+/* Legend: condensed + wrap, no horizontal scrolling */
+.legendTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;           /* slightly reduced */
+  table-layout: fixed;       /* helps prevent horizontal overflow */
+}
 
-/* Resources page layout */
+.legendTable td {
+  padding: 6px 6px;
+  border-bottom: 1px solid #eee;
+  vertical-align: top;
+}
+
+.legendTable tr:last-child td { border-bottom: none; }
+
+.legendSwatchCell { width: 22px; }
+.legendSwatchBox {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+  border: 1px solid rgba(0,0,0,.15);
+  margin-top: 2px;
+}
+
+.legendName {
+  font-weight: 600;
+  white-space: normal;       /* allow wrapping */
+  overflow-wrap: anywhere;   /* break long names */
+  word-break: break-word;
+}
+
+.legendVal {
+  text-align: right;
+  white-space: nowrap;       /* keep numbers intact */
+  color: #333;
+  width: 76px;
+}
+
+/* Home legend box */
+.homeLegendBox {
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 8px;
+  background: #fff;
+}
+
+/* =========================================================
+   Resources layout
+========================================================= */
+
 .resourcesLayout {
   display: grid;
   grid-template-columns: 1.25fr 0.75fr;
@@ -231,13 +288,8 @@ a.inline:hover { text-decoration:underline; }
 }
 @media (max-width: 900px) { .resourcesLayout { grid-template-columns: 1fr; } }
 
-.resourcesPieBox {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
+.resourcesPieBox { display: flex; justify-content: center; align-items: center; }
 
-.resourcesPieBox canvas,
 .resourcesPieBox svg {
   max-width: min(640px, 100%);
   height: auto;
@@ -245,7 +297,8 @@ a.inline:hover { text-decoration:underline; }
 
 .resourcesLegendBox {
   max-height: 640px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   border: 1px solid #eee;
   border-radius: 12px;
   padding: 8px;
@@ -253,8 +306,8 @@ a.inline:hover { text-decoration:underline; }
 }
 
 /* =========================================================
-   Modal (click-to-enlarge GDP pies)
-   ========================================================= */
+   Modal (click-to-enlarge pies)
+========================================================= */
 
 .modalOverlay {
   position: fixed;
@@ -267,9 +320,7 @@ a.inline:hover { text-decoration:underline; }
   z-index: 9999;
 }
 
-.modalOverlay.show {
-  display: flex;
-}
+.modalOverlay.show { display: flex; }
 
 .modalCard {
   width: min(1100px, 100%);
@@ -316,22 +367,24 @@ a.inline:hover { text-decoration:underline; }
   gap: 14px;
   align-items: start;
 }
-@media (max-width: 900px) {
-  .modalGrid { grid-template-columns: 1fr; }
-}
+@media (max-width: 900px) { .modalGrid { grid-template-columns: 1fr; } }
 
-.modalPie {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
+.modalPie { display: flex; justify-content: center; align-items: center; }
 
-.modalPie svg {
-  max-width: 100%;
-  height: auto;
-}
+.modalPie svg { max-width: 100%; height: auto; }
 
 .modalLegend {
   max-height: 70vh;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
+
+/* Reusable legend card inside modal */
+.legendCard {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #eee;
+  padding: 10px;
+}
+
+.legendTitle { margin: 0 0 10px 0; font-size: 14px; font-weight: 800; }
