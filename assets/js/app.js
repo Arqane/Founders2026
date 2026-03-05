@@ -364,7 +364,8 @@ function legendHtml() {
         `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
     )
     .join("");
-  return `<div class="graphLegend">${items}</div>`;
+  //return `<div class="graphLegend">${items}</div>`;
+return `<div class="graphLegendWrap"><div class="graphLegend">${items}</div></div>`;
 }
 
 function edgeTooltipText(edge) {
