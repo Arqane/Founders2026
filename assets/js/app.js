@@ -57,11 +57,11 @@ function ensureOneModalExists() {
   overlay.id = "pieModalOverlay";
   overlay.className = "modalOverlay";
   overlay.innerHTML = `
-    <div class="modalCard" role="dialog" aria-modal="true" aria-label="Planet GDP details">
+    <div class="modalCard" role="dialog" aria-modal="true" aria-label="Chart details">
       <div class="modalHeader">
         <div class="modalTitleWrap">
-          <div class="modalTitle" id="pieModalTitle">Planet</div>
-          <div class="modalSubtitle" id="pieModalSubtitle">Year • Global GDP</div>
+          <div class="modalTitle" id="pieModalTitle">Chart</div>
+          <div class="modalSubtitle" id="pieModalSubtitle">Details</div>
         </div>
         <button class="modalClose" id="pieModalClose" aria-label="Close">✕</button>
       </div>
@@ -75,11 +75,9 @@ function ensureOneModalExists() {
   `;
   document.body.appendChild(overlay);
 
-  const closeBtn = document.getElementById("pieModalClose");
-  closeBtn.addEventListener("click", () => hideModal());
+  document.getElementById("pieModalClose").addEventListener("click", () => hideModal());
 
   overlay.addEventListener("click", (e) => {
-    // click outside the card closes
     if (e.target === overlay) hideModal();
   });
 
@@ -88,19 +86,14 @@ function ensureOneModalExists() {
   });
 }
 
-function showModal({ title, subtitle, pieHtml, legendHtml }) {
+function showModal({ key, title, subtitle, pieHtml, legendHtml }) {
   ensureOneModalExists();
   const overlay = document.getElementById("pieModalOverlay");
-  const t = document.getElementById("pieModalTitle");
-  const st = document.getElementById("pieModalSubtitle");
-  const pie = document.getElementById("pieModalPie");
-  const leg = document.getElementById("pieModalLegend");
-
-  t.textContent = title || "";
-  st.textContent = subtitle || "";
-  pie.innerHTML = pieHtml || "";
-  leg.innerHTML = legendHtml || "";
-
+  document.getElementById("pieModalTitle").textContent = title || "";
+  document.getElementById("pieModalSubtitle").textContent = subtitle || "";
+  document.getElementById("pieModalPie").innerHTML = pieHtml || "";
+  document.getElementById("pieModalLegend").innerHTML = legendHtml || "";
+  overlay.setAttribute("data-key", key || "");
   overlay.classList.add("show");
   document.body.style.overflow = "hidden";
 }
@@ -109,6 +102,7 @@ function hideModal() {
   const overlay = document.getElementById("pieModalOverlay");
   if (!overlay) return;
   overlay.classList.remove("show");
+  overlay.removeAttribute("data-key");
   document.body.style.overflow = "";
 }
 
@@ -203,8 +197,7 @@ function fmtUsdTFromBillions(n) {
   const b = Number(n);
   if (!Number.isFinite(b)) return "—";
   const t = b / 1000;
-  const digits = t >= 10 ? 1 : 1; // keep consistent "clean"
-  return `$${t.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits })}T`;
+  return `$${t.toLocaleString(undefined, { maximumFractionDigits: 1, minimumFractionDigits: 1 })}T`;
 }
 
 function fmtUsd(n, digits = 0) {
@@ -229,7 +222,139 @@ function fmtNum(n, digits = 0) {
 }
 
 /* =========================================================
-   Diplomacy Web (centered) + focus disables tooltip on dim edges
+   Generic Pie (SVG) + tooltip (country + value)
+========================================================= */
+
+function pieColorForIndex(i, n) {
+  const hue = Math.round((360 * i) / Math.max(1, n));
+  return `hsl(${hue} 70% 55%)`;
+}
+
+function ensurePieTooltipIn(el) {
+  if (!el) return null;
+  let tip = el.querySelector(".pieTooltip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.className = "pieTooltip";
+    el.appendChild(tip);
+  }
+  return tip;
+}
+
+function attachPieTooltipHandlers(container) {
+  // container should contain .pieWrap + svg + paths with data-tip
+  if (!container) return;
+  const wrap = container.querySelector(".pieWrap");
+  const svg = container.querySelector("svg[data-pie='1']");
+  if (!wrap || !svg) return;
+
+  const tip = ensurePieTooltipIn(wrap);
+
+  function showTip(e, text) {
+    tip.textContent = text;
+    tip.classList.add("show");
+    const rect = wrap.getBoundingClientRect();
+    tip.style.left = `${e.clientX - rect.left}px`;
+    tip.style.top = `${e.clientY - rect.top}px`;
+  }
+
+  function hideTip() {
+    tip.classList.remove("show");
+  }
+
+  svg.addEventListener("mousemove", (e) => {
+    const path = e.target;
+    if (path && path.tagName === "path" && path.dataset && path.dataset.tip) {
+      showTip(e, path.dataset.tip);
+    } else {
+      hideTip();
+    }
+  });
+  svg.addEventListener("mouseleave", hideTip);
+}
+
+/**
+ * Build a pie SVG. No labels on slices. Tooltip text stored in data-tip.
+ * data: [{name, value, displayValueText, sortValue?}]
+ * total: sum of sortValue (or value)
+ */
+function pieSvgHtml({ data, total, size, ariaLabel }) {
+  if (!Array.isArray(data) || !data.length || !(total > 0)) {
+    return `<div class="small">No data.</div>`;
+  }
+
+  const W = size === "large" ? 720 : 420;
+  const H = size === "large" ? 520 : 320;
+  const cx = W / 2;
+  const cy = H / 2 + (size === "large" ? 0 : 6);
+  const r = size === "large" ? 200 : 120;
+
+  let start = -Math.PI / 2;
+
+  const slices = data.map((d, i) => {
+    const sv = Number.isFinite(Number(d.sortValue)) ? Number(d.sortValue) : Number(d.value);
+    const ang = (sv / total) * Math.PI * 2;
+    const end = start + ang;
+
+    const x1 = cx + r * Math.cos(start);
+    const y1 = cy + r * Math.sin(start);
+    const x2 = cx + r * Math.cos(end);
+    const y2 = cy + r * Math.sin(end);
+    const large = ang > Math.PI ? 1 : 0;
+
+    const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+    const color = pieColorForIndex(i, data.length);
+
+    start = end;
+
+    const tip = `${d.name} — ${d.displayValueText ?? String(d.value)}`;
+
+    return { path, color, tip };
+  });
+
+  return `
+    <div class="pieWrap">
+      <svg class="homePieSvg"
+           data-pie="1"
+           style="display:block; max-width:100%; height:auto;"
+           width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
+           role="img" aria-label="${escapeHtml(ariaLabel || "Pie chart")}">
+        ${slices
+          .map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95" data-tip="${escapeHtml(s.tip)}"></path>`)
+          .join("")}
+      </svg>
+      <!-- tooltip div injected by JS -->
+    </div>
+  `;
+}
+
+function legendTableHtml(data) {
+  if (!Array.isArray(data) || !data.length) return "";
+
+  const rows = data
+    .map((d, i) => {
+      const color = pieColorForIndex(i, data.length);
+      return `
+        <tr>
+          <td class="legendSwatchCell">
+            <span class="legendSwatchBox" style="background:${color};"></span>
+          </td>
+          <td class="legendName">${escapeHtml(d.name)}</td>
+          <td class="legendVal">${escapeHtml(d.displayValueText ?? String(d.value))}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  return `
+    <table class="legendTable">
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+/* =========================================================
+   Diplomacy Web (unchanged rules)
 ========================================================= */
 
 function legendHtml() {
@@ -347,7 +472,6 @@ function attachDiplomacyTooltipHandlers() {
 
   svg.addEventListener("mousemove", (e) => {
     const t = e.target;
-    // ✅ Only show tooltip for non-dim edges (when focused, dim edges will not pop up)
     if (t && t.classList && t.classList.contains("dipEdge") && t.dataset?.tip) {
       if (t.classList.contains("dim")) {
         hideTip();
@@ -501,53 +625,8 @@ function attachExpandableTableHandlers() {
 }
 
 /* =========================================================
-   Trade chart helpers
+   Trade ranking helpers
 ========================================================= */
-
-function topN(items, key, n = 10, useAbs = false) {
-  return (items || [])
-    .map((x) => {
-      const v = Number(x[key]);
-      if (!Number.isFinite(v)) return null;
-      return { ...x, _v: v, _sv: useAbs ? Math.abs(v) : v };
-    })
-    .filter(Boolean)
-    .sort((a, b) => b._sv - a._sv)
-    .slice(0, n);
-}
-
-function barChartHtml(title, items, key, fmtFn, useAbs = false) {
-  const top = topN(items, key, 10, useAbs);
-  if (!top.length) return `<div class="small">No data for ${escapeHtml(title)}.</div>`;
-
-  const max = Math.max(...top.map((x) => x._sv), 1);
-
-  const rows = top
-    .map((x) => {
-      const pct = Math.max(0, Math.min(100, (x._sv / max) * 100));
-      return `
-        <div class="barRow" style="display:grid; grid-template-columns: 1fr 2.2fr auto; gap:10px; align-items:center; margin:8px 0;">
-          <div class="small" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(
-            x.name
-          )}</div>
-          <div class="barTrack" style="height:10px; border-radius:999px; background:rgba(148,163,184,0.25); overflow:hidden;">
-            <div class="barFill" style="height:100%; width:${pct.toFixed(
-              1
-            )}%; background:rgba(148,163,184,0.95);"></div>
-          </div>
-          <div class="small num" style="white-space:nowrap; text-align:right;">${fmtFn(x._v)}</div>
-        </div>
-      `;
-    })
-    .join("");
-
-  return `
-    <div class="card" style="box-shadow:none; border:1px solid #eee;">
-      <h4 style="margin:0 0 10px 0;">${escapeHtml(title)}</h4>
-      <div class="barChart">${rows}</div>
-    </div>
-  `;
-}
 
 function rankFromTradeItems(items, key, dir = "desc", useAbs = false) {
   const list = (items || [])
@@ -562,121 +641,59 @@ function rankFromTradeItems(items, key, dir = "desc", useAbs = false) {
   return list.map(({ name, value }) => ({ name, value }));
 }
 
-/* =========================================================
-   Resources (bigger centered pie + compact legend)
-========================================================= */
+function buildTradePieData(items, key, formatter, useAbsForSize = false, useAbsForDisplay = false) {
+  const data = (items || [])
+    .map((x) => {
+      const raw = Number(x[key]);
+      if (!Number.isFinite(raw)) return null;
+      const size = useAbsForSize ? Math.abs(raw) : raw;
+      if (!(size > 0)) return null;
+      const displayVal = useAbsForDisplay ? Math.abs(raw) : raw;
+      return {
+        name: String(x.name || "").trim(),
+        value: raw,
+        sortValue: size,
+        displayValueText: formatter(displayVal),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => (b.sortValue ?? 0) - (a.sortValue ?? 0));
 
-function pieColorForIndex(i, n) {
-  const hue = Math.round((360 * i) / Math.max(1, n));
-  return `hsl(${hue} 70% 55%)`;
+  const total = data.reduce((s, d) => s + (Number.isFinite(Number(d.sortValue)) ? Number(d.sortValue) : Number(d.value)), 0);
+  return { data, total };
 }
 
-function pieRender(breakdown, title) {
-  const data = (breakdown || [])
-    .map((x) => ({ name: String(x.name || ""), value: Number(x.value) }))
-    .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0)
-    .sort((a, b) => b.value - a.value);
-
-  const total = data.reduce((s, x) => s + x.value, 0);
-  if (!data.length || total <= 0) {
-    return {
-      pieHtml: `<div class="small">No countries possess this resource (or all values are 0).</div>`,
-      legendHtml: "",
-    };
-  }
-
-  const W = 720;
-  const H = 480;
-  const cx = W / 2;
-  const cy = H / 2;
-  const r = 185;
-
-  let start = -Math.PI / 2;
-
-  const slices = data.map((d, i) => {
-    const ang = (d.value / total) * Math.PI * 2;
-    const end = start + ang;
-
-    const x1 = cx + r * Math.cos(start);
-    const y1 = cy + r * Math.sin(start);
-    const x2 = cx + r * Math.cos(end);
-    const y2 = cy + r * Math.sin(end);
-    const large = ang > Math.PI ? 1 : 0;
-
-    const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-
-    const mid = (start + end) / 2;
-    const lx = cx + (r + 34) * Math.cos(mid);
-    const ly = cy + (r + 34) * Math.sin(mid);
-    const label = `${d.name}: ${fmtNum(d.value, 0)}`;
-
-    const color = pieColorForIndex(i, data.length);
-
-    start = end;
-    return { path, color, lx, ly, label };
+function pieCardHtml({ cardKey, title, subtitle, data, total, size }) {
+  const pie = pieSvgHtml({
+    data,
+    total,
+    size,
+    ariaLabel: title,
   });
 
-  const pieHtml = `
-    <div class="card" style="box-shadow:none; border:1px solid #eee;">
-      <h4 style="margin:0 0 10px 0; text-align:center;">${escapeHtml(title)}</h4>
-      <div style="display:flex; justify-content:center;">
-        <svg style="display:block; max-width:100%; height:auto;"
-             width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
-             role="img" aria-label="Resource pie chart">
-          ${slices.map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95"></path>`).join("")}
-          ${slices
-            .map(
-              (s) =>
-                `<text x="${s.lx}" y="${s.ly}" font-size="12" text-anchor="middle">${escapeHtml(
-                  s.label
-                )}</text>`
-            )
-            .join("")}
-        </svg>
+  const legend = legendTableHtml(data);
+
+  return `
+    <div class="chartCard" data-chartkey="${escapeHtml(cardKey)}" style="cursor:pointer;">
+      <div class="chartHeader">
+        <h4 class="chartTitle">${escapeHtml(title)}</h4>
+        <div class="chartSubtitle">${escapeHtml(subtitle || "")}</div>
       </div>
+
+      <div class="chartRow">
+        <div class="chartPieBox">${pie}</div>
+        <div class="chartLegendBox">${legend}</div>
+      </div>
+
+      <div class="small" style="text-align:center; margin-top:8px;">Click to enlarge</div>
     </div>
   `;
-
-  const legendRows = data
-    .map((d, i) => {
-      const color = pieColorForIndex(i, data.length);
-      return `
-        <tr>
-          <td style="width:22px;">
-            <span style="display:inline-block;width:12px;height:12px;border-radius:4px;background:${color};"></span>
-          </td>
-          <td style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px;">${escapeHtml(
-            d.name
-          )}</td>
-          <td class="num" style="white-space:nowrap;">${fmtNum(d.value, 0)}</td>
-        </tr>
-      `;
-    })
-    .join("");
-
-  const legendHtml = `
-    <div class="card" style="box-shadow:none; border:1px solid #eee;">
-      <h4 style="margin:0 0 10px 0;">Legend</h4>
-      <table class="table">
-        <thead><tr><th></th><th>Country</th><th class="num">Amount</th></tr></thead>
-        <tbody>${legendRows}</tbody>
-      </table>
-    </div>
-  `;
-
-  return { pieHtml, legendHtml };
 }
 
 /* =========================================================
-   Home page GDP pies (2x2) — one per planet (exclude TEST)
-   Changes:
-   - No labels on pie (prevents overlap)
-   - No "Other" category (all countries)
-   - Values displayed as trillions ($T) converted from billions input
-   - Click card toggles modal enlargement
+   Home page GDP pies (2x2) — exclude TEST
 ========================================================= */
 
-// GDP extraction: prefer rankings.rGDP; fallback to countries[].realGdp-like fields.
 function getCountryGdpFromCountryObj(c) {
   const candidates = ["realGdp", "rgdp", "real_gdp", "gdp", "realGDP", "RealGDP", "Real Gdp"];
   for (const k of candidates) {
@@ -687,7 +704,6 @@ function getCountryGdpFromCountryObj(c) {
 }
 
 function gdpBreakdownFromPlanetPayload(payload) {
-  // Primary: rankings.rGDP
   const r = payload?.rankings?.rGDP;
   const list = Array.isArray(r) ? r : null;
 
@@ -697,7 +713,6 @@ function gdpBreakdownFromPlanetPayload(payload) {
       .map((x) => ({ name: String(x.name || "").trim(), value: Number(x.value) }))
       .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0);
   } else {
-    // Fallback: countries array
     const countries = Array.isArray(payload?.countries) ? payload.countries : [];
     rows = countries
       .map((c) => ({
@@ -710,132 +725,20 @@ function gdpBreakdownFromPlanetPayload(payload) {
   rows.sort((a, b) => b.value - a.value);
   const total = rows.reduce((s, x) => s + x.value, 0);
 
-  return { total, breakdown: rows };
-}
+  const data = rows.map((r) => ({
+    name: r.name,
+    value: r.value,
+    sortValue: r.value,
+    displayValueText: fmtUsdTFromBillions(r.value),
+  }));
 
-function legendTableHtml_T(data) {
-  if (!Array.isArray(data) || !data.length) return "";
-
-  const rows = data
-    .map((d, i) => {
-      const color = pieColorForIndex(i, data.length);
-      return `
-        <tr>
-          <td style="width:22px;">
-            <span class="legendSwatchBox" style="background:${color};"></span>
-          </td>
-          <td class="legendName" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px;">
-            ${escapeHtml(d.name)}
-          </td>
-          <td class="legendVal">${escapeHtml(fmtUsdTFromBillions(d.value))}</td>
-        </tr>
-      `;
-    })
-    .join("");
-
-  return `
-    <table class="legendTable">
-      <tbody>${rows}</tbody>
-    </table>
-  `;
-}
-
-function gdpPieSvgHtml({ data, total, size = "small", ariaLabel = "GDP pie" }) {
-  if (!Array.isArray(data) || !data.length || !(total > 0)) return `<div class="small">No GDP data.</div>`;
-
-  const W = size === "large" ? 720 : 420;
-  const H = size === "large" ? 520 : 320;
-  const cx = W / 2;
-  const cy = H / 2 + (size === "large" ? 0 : 6);
-  const r = size === "large" ? 200 : 120;
-
-  let start = -Math.PI / 2;
-
-  const slices = data.map((d, i) => {
-    const ang = (d.value / total) * Math.PI * 2;
-    const end = start + ang;
-
-    const x1 = cx + r * Math.cos(start);
-    const y1 = cy + r * Math.sin(start);
-    const x2 = cx + r * Math.cos(end);
-    const y2 = cy + r * Math.sin(end);
-    const large = ang > Math.PI ? 1 : 0;
-
-    const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-    const color = pieColorForIndex(i, data.length);
-
-    start = end;
-    return { path, color };
-  });
-
-  // No labels on slices (prevents overlap). Legend carries names/values.
-  return `
-    <svg class="homePieSvg"
-         style="display:block; max-width:100%; height:auto;"
-         width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
-         role="img" aria-label="${escapeHtml(ariaLabel)}">
-      ${slices.map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95"></path>`).join("")}
-    </svg>
-  `;
-}
-
-function gdpPieCardHtml({ planetLabel, totalGdp, breakdown, yearLabel, planetId }) {
-  const data = (breakdown || [])
-    .map((d) => ({ name: d.name, value: Number(d.value) }))
-    .filter((d) => d.name && Number.isFinite(d.value) && d.value > 0);
-
-  if (!data.length || !(totalGdp > 0)) {
-    return `
-      <div class="homePlanetCard" data-planet="${escapeHtml(planetId)}">
-        <div class="homePlanetHeader">
-          <h4 class="homePlanetTitle">${escapeHtml(planetLabel)}</h4>
-          <div class="homePlanetSubtitle">${escapeHtml(yearLabel || "")}</div>
-        </div>
-        <div class="small">Global GDP: —</div>
-        <div class="small" style="margin-top:10px;">No GDP data.</div>
-      </div>
-    `;
-  }
-
-  const pieHtml = gdpPieSvgHtml({
-    data,
-    total: totalGdp,
-    size: "small",
-    ariaLabel: `${planetLabel} GDP pie chart`,
-  });
-
-  return `
-    <div class="homePlanetCard" data-planet="${escapeHtml(planetId)}" style="cursor:pointer;">
-      <div class="homePlanetHeader">
-        <h4 class="homePlanetTitle">${escapeHtml(planetLabel)}</h4>
-        <div class="homePlanetSubtitle">${escapeHtml(yearLabel || "")}</div>
-      </div>
-
-      <div class="small" style="margin-bottom:10px;">
-        Global GDP: <strong>${escapeHtml(fmtUsdTFromBillions(totalGdp))}</strong>
-      </div>
-
-      <div class="homePieRow">
-        <div class="homePieBox">
-          ${pieHtml}
-        </div>
-        <div class="homeLegendBox">
-          ${legendTableHtml_T(data)}
-        </div>
-      </div>
-
-      <div class="small" style="text-align:center; margin-top:8px;">
-        Click to enlarge
-      </div>
-    </div>
-  `;
+  return { total, data };
 }
 
 async function renderHomeGdpPies() {
   const grid = document.getElementById("homeGdpGrid");
   if (!grid) return;
 
-  // 2x2 should be Parallax, Cyq`s, Sevyr, Octavium (exclude TEST)
   const planetsForGrid = PLANETS.filter((p) => p.id !== "test").slice(0, 4);
 
   grid.innerHTML = `<div class="small">Loading GDP pies…</div>`;
@@ -847,8 +750,7 @@ async function renderHomeGdpPies() {
       )
     );
 
-    // Cache the computed data for modal use
-    const modalDataByPlanet = new Map();
+    const modalCache = new Map();
 
     const cards = payloads.map((pl, idx) => {
       const planet = planetsForGrid[idx];
@@ -856,7 +758,7 @@ async function renderHomeGdpPies() {
 
       if (!pl?.ok) {
         return `
-          <div class="homePlanetCard" data-planet="${escapeHtml(planet.id)}" style="border:1px solid #ef4444;">
+          <div class="homePlanetCard" style="border:1px solid #ef4444;">
             <div class="homePlanetHeader">
               <h4 class="homePlanetTitle">${escapeHtml(planetLabel)}</h4>
               <div class="homePlanetSubtitle">Error</div>
@@ -869,70 +771,88 @@ async function renderHomeGdpPies() {
         `;
       }
 
-      const { total, breakdown } = gdpBreakdownFromPlanetPayload(pl);
       const yLabel = yearTitleFromPayload(pl);
+      const { total, data } = gdpBreakdownFromPlanetPayload(pl);
 
-      modalDataByPlanet.set(planet.id, {
-        planetId: planet.id,
-        planetLabel,
-        yearLabel: yLabel,
+      const key = `home:gdp:${planet.id}`;
+      modalCache.set(key, { planetLabel, yearLabel: yLabel, total, data });
+
+      const pieSmall = pieSvgHtml({
+        data,
         total,
-        breakdown,
+        size: "small",
+        ariaLabel: `${planetLabel} GDP`,
       });
 
-      return gdpPieCardHtml({
-        planetId: planet.id,
-        planetLabel,
-        totalGdp: total,
-        breakdown,
-        yearLabel: yLabel,
-      });
+      return `
+        <div class="homePlanetCard" data-chartkey="${escapeHtml(key)}" style="cursor:pointer;">
+          <div class="homePlanetHeader">
+            <h4 class="homePlanetTitle">${escapeHtml(planetLabel)}</h4>
+            <div class="homePlanetSubtitle">${escapeHtml(yLabel)}</div>
+          </div>
+          <div class="small" style="margin-bottom:10px;">
+            Global GDP: <strong>${escapeHtml(fmtUsdTFromBillions(total))}</strong>
+          </div>
+
+          <div class="homePieRow">
+            <div class="homePieBox">${pieSmall}</div>
+            <div class="homeLegendBox">${legendTableHtml(data)}</div>
+          </div>
+
+          <div class="small" style="text-align:center; margin-top:8px;">Click to enlarge</div>
+        </div>
+      `;
     });
 
     grid.innerHTML = `<div class="homeGrid2x2">${cards.join("")}</div>`;
 
-    // Attach click handlers for modal toggle
-    const cardEls = Array.from(grid.querySelectorAll(".homePlanetCard[data-planet]"));
-    cardEls.forEach((cardEl) => {
+    // tooltips for all home pies
+    Array.from(grid.querySelectorAll(".homePlanetCard")).forEach((card) => {
+      attachPieTooltipHandlers(card);
+    });
+
+    // click-to-enlarge
+    Array.from(grid.querySelectorAll("[data-chartkey]")).forEach((cardEl) => {
       cardEl.addEventListener("click", () => {
-        const pid = cardEl.getAttribute("data-planet");
-        const data = modalDataByPlanet.get(pid);
-        if (!data || !(data.total > 0) || !Array.isArray(data.breakdown) || !data.breakdown.length) return;
+        const key = cardEl.getAttribute("data-chartkey");
+        if (!key) return;
 
         const overlay = document.getElementById("pieModalOverlay");
         const alreadyOpen = overlay && overlay.classList.contains("show");
-
-        // Toggle behavior: if same planet is open, close; else open/replace
-        const currentPlanet = overlay?.getAttribute("data-planet");
-        if (alreadyOpen && currentPlanet === pid) {
+        const currentKey = overlay?.getAttribute("data-key");
+        if (alreadyOpen && currentKey === key) {
           hideModal();
           return;
         }
 
-        const pieHtmlLarge = gdpPieSvgHtml({
-          data: data.breakdown,
-          total: data.total,
+        const cached = modalCache.get(key);
+        if (!cached || !(cached.total > 0) || !cached.data?.length) return;
+
+        const pieLarge = pieSvgHtml({
+          data: cached.data,
+          total: cached.total,
           size: "large",
-          ariaLabel: `${data.planetLabel} GDP pie chart enlarged`,
+          ariaLabel: `${cached.planetLabel} GDP enlarged`,
         });
 
         const legendHtml = `
-          <div class="card" style="box-shadow:none; border:1px solid #eee; margin:0;">
-            <h4 style="margin:0 0 10px 0;">All countries</h4>
-            ${legendTableHtml_T(data.breakdown)}
+          <div class="legendCard">
+            <h4 class="legendTitle">All countries</h4>
+            ${legendTableHtml(cached.data)}
           </div>
         `;
 
         showModal({
-          title: data.planetLabel,
-          subtitle: `${data.yearLabel} • Global GDP: ${fmtUsdTFromBillions(data.total)}`,
-          pieHtml: pieHtmlLarge,
+          key,
+          title: cached.planetLabel,
+          subtitle: `${cached.yearLabel} • Global GDP: ${fmtUsdTFromBillions(cached.total)}`,
+          pieHtml: pieLarge,
           legendHtml,
         });
 
-        // Mark which planet is open
-        const ov = document.getElementById("pieModalOverlay");
-        ov.setAttribute("data-planet", pid);
+        // tooltip in modal pie
+        const modalPie = document.getElementById("pieModalPie");
+        attachPieTooltipHandlers(modalPie);
       });
     });
   } catch (err) {
@@ -964,7 +884,6 @@ function viewChoosePlanetSkeleton() {
 
     <section class="card">
       <h3 class="sectionTitle">Global GDP by Planet</h3>
-      <p class="small">One pie per planet (2×2). Click any chart to enlarge.</p>
       <div id="homeGdpGrid" style="margin-top:12px;"></div>
     </section>
   `;
@@ -1062,10 +981,56 @@ function viewTrade(planet, overviewPayload, tradePayload) {
   const expRank = rankFromTradeItems(items, "exportValue", "desc", false);
   const impRankAbs = rankFromTradeItems(items, "importValue", "desc", true);
 
-  return `
-    ${planetHeader(planet, tradePayload)}
-    ${diplomacySectionFromPayload(overviewPayload)}
+  // Pie charts above tables (replace bar charts)
+  const freqPie = buildTradePieData(items, "frequency", (v) => fmtNum(v, 0), false, false);
+  const volPie = buildTradePieData(items, "volume", (v) => fmtNum(v, 0), false, false);
+  const expPie = buildTradePieData(items, "exportValue", (v) => fmtUsdB(v), false, false);
+  // imports: sizes and display use ABS
+  const impPie = buildTradePieData(items, "importValue", (v) => fmtUsdB(v), true, true);
 
+  const keyBase = `trade:${planet.id}:${tradePayload?.year ?? ""}`;
+
+  const piesHtml = `
+    <section class="card">
+      <h3 class="sectionTitle">${escapeHtml(yTitle)} Trade Charts</h3>
+      <div class="grid2">
+        ${pieCardHtml({
+          cardKey: `${keyBase}:frequency`,
+          title: "Trade Frequency",
+          subtitle: "Hover slices for values",
+          data: freqPie.data,
+          total: freqPie.total,
+          size: "small",
+        })}
+        ${pieCardHtml({
+          cardKey: `${keyBase}:volume`,
+          title: "Trade Volume",
+          subtitle: "Hover slices for values",
+          data: volPie.data,
+          total: volPie.total,
+          size: "small",
+        })}
+        ${pieCardHtml({
+          cardKey: `${keyBase}:exports`,
+          title: "Export Value ($B)",
+          subtitle: "Hover slices for values",
+          data: expPie.data,
+          total: expPie.total,
+          size: "small",
+        })}
+        ${pieCardHtml({
+          cardKey: `${keyBase}:imports`,
+          title: "Import Value ($B)",
+          subtitle: "ABS used for ranking + slice sizes",
+          data: impPie.data,
+          total: impPie.total,
+          size: "small",
+        })}
+      </div>
+    </section>
+  `;
+
+  const tablesHtml = `
     <section class="card">
       <h3 class="sectionTitle">${escapeHtml(yTitle)} Trade Overview</h3>
       <p class="small">Click any table to expand/collapse full rankings (no page refresh).</p>
@@ -1074,19 +1039,16 @@ function viewTrade(planet, overviewPayload, tradePayload) {
         ${expandableRankingsTable({ id: "trade:freq", title: "Trade Frequency", rows: freqRank, fmtFn: (n) => fmtNum(n, 0) })}
         ${expandableRankingsTable({ id: "trade:vol", title: "Trade Volume", rows: volRank, fmtFn: (n) => fmtNum(n, 0) })}
         ${expandableRankingsTable({ id: "trade:exports", title: "Export Value ($B)", rows: expRank, fmtFn: fmtUsdB })}
-        ${expandableRankingsTable({ id: "trade:imports", title: "Import Value ($B)", rows: impRankAbs, fmtFn: fmtUsdB })}
-      </div>
-
-      <div style="margin-top:14px;">
-        <h4 style="margin:0 0 10px 0;">Trade Charts (Top 10)</h4>
-        <div class="grid2">
-          ${barChartHtml("Trade Frequency", items, "frequency", (v) => fmtNum(v, 0))}
-          ${barChartHtml("Trade Volume", items, "volume", (v) => fmtNum(v, 0))}
-          ${barChartHtml("Export Value ($B)", items, "exportValue", fmtUsdB)}
-          ${barChartHtml("Import Value ($B)", items, "importValue", fmtUsdB, true)}
-        </div>
+        ${expandableRankingsTable({ id: "trade:imports", title: "Import Value ($B)", rows: impRankAbs, fmtFn: (v) => fmtUsdB(Math.abs(v)) })}
       </div>
     </section>
+  `;
+
+  return `
+    ${planetHeader(planet, tradePayload)}
+    ${diplomacySectionFromPayload(overviewPayload)}
+    ${piesHtml}
+    ${tablesHtml}
   `;
 }
 
@@ -1107,7 +1069,6 @@ function viewResources(planet, resPayload) {
 
       <div id="resTotals" class="small" style="margin-top:10px;"></div>
 
-      <!-- Updated layout: bigger centered pie + constrained legend -->
       <div class="resourcesLayout" style="margin-top:12px;">
         <div class="resourcesPieBox"><div id="resPie"></div></div>
         <div class="resourcesLegendBox"><div id="resLegend"></div></div>
@@ -1131,11 +1092,85 @@ function attachResourcesHandlers(resPayload) {
     const total = totalMap.get(resource);
     totalsEl.innerHTML = `World total: <strong>${fmtNum(total, 0)}</strong>`;
 
+    // Keep your existing resource pie behavior (labels as values)
+    // (Not changing this since your request was about planet + trade pies)
     const breakdown = breakdownByResource[resource] || [];
-    const { pieHtml, legendHtml } = pieRender(breakdown, `${resource} holdings by country (labels show values)`);
+    const data = (breakdown || [])
+      .map((x) => ({ name: String(x.name || ""), value: Number(x.value) }))
+      .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0)
+      .sort((a, b) => b.value - a.value);
 
-    pieEl.innerHTML = pieHtml;
-    legendEl.innerHTML = legendHtml;
+    const totalRes = data.reduce((s, x) => s + x.value, 0);
+    if (!data.length || totalRes <= 0) {
+      pieEl.innerHTML = `<div class="small">No countries possess this resource (or all values are 0).</div>`;
+      legendEl.innerHTML = "";
+      return;
+    }
+
+    // render resources pie with labels as values (your existing rule)
+    const W = 720;
+    const H = 480;
+    const cx = W / 2;
+    const cy = H / 2;
+    const r = 185;
+    let start = -Math.PI / 2;
+
+    const slices = data.map((d, i) => {
+      const ang = (d.value / totalRes) * Math.PI * 2;
+      const end = start + ang;
+
+      const x1 = cx + r * Math.cos(start);
+      const y1 = cy + r * Math.sin(start);
+      const x2 = cx + r * Math.cos(end);
+      const y2 = cy + r * Math.sin(end);
+      const large = ang > Math.PI ? 1 : 0;
+
+      const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+
+      const mid = (start + end) / 2;
+      const lx = cx + (r + 34) * Math.cos(mid);
+      const ly = cy + (r + 34) * Math.sin(mid);
+      const label = `${d.name}: ${fmtNum(d.value, 0)}`;
+
+      const color = pieColorForIndex(i, data.length);
+
+      start = end;
+      return { path, color, lx, ly, label };
+    });
+
+    pieEl.innerHTML = `
+      <div class="card" style="box-shadow:none; border:1px solid #eee;">
+        <h4 style="margin:0 0 10px 0; text-align:center;">${escapeHtml(resource)} holdings by country (labels show values)</h4>
+        <div style="display:flex; justify-content:center;">
+          <svg style="display:block; max-width:100%; height:auto;"
+               width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
+               role="img" aria-label="Resource pie chart">
+            ${slices.map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95"></path>`).join("")}
+            ${slices.map((s) => `<text x="${s.lx}" y="${s.ly}" font-size="12" text-anchor="middle">${escapeHtml(s.label)}</text>`).join("")}
+          </svg>
+        </div>
+      </div>
+    `;
+
+    const legendRows = data
+      .map((d, i) => {
+        const color = pieColorForIndex(i, data.length);
+        return `
+          <tr>
+            <td class="legendSwatchCell"><span class="legendSwatchBox" style="background:${color};"></span></td>
+            <td class="legendName">${escapeHtml(d.name)}</td>
+            <td class="legendVal">${escapeHtml(fmtNum(d.value, 0))}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    legendEl.innerHTML = `
+      <div class="legendCard">
+        <h4 class="legendTitle">Legend</h4>
+        <table class="legendTable"><tbody>${legendRows}</tbody></table>
+      </div>
+    `;
   }
 
   render(sel.value);
@@ -1177,9 +1212,7 @@ async function render() {
       console.error(err);
     }
 
-    // ✅ Add GDP pies (2x2) under planet selection
     renderHomeGdpPies();
-
     return;
   }
 
@@ -1218,9 +1251,78 @@ async function render() {
 
       app.innerHTML = viewTrade(planet, overviewPayload, tradePayload);
 
+      // diplomacy
       attachDiplomacyTooltipHandlers();
       attachDiplomacyFocusHandlers();
+
+      // expandable tables
       attachExpandableTableHandlers();
+
+      // tooltips on trade pies
+      document.querySelectorAll(".chartCard").forEach((card) => attachPieTooltipHandlers(card));
+
+      // modal toggle for trade pies (same rules as home pies)
+      document.querySelectorAll(".chartCard[data-chartkey]").forEach((card) => {
+        card.addEventListener("click", () => {
+          const key = card.getAttribute("data-chartkey");
+          if (!key) return;
+
+          const overlay = document.getElementById("pieModalOverlay");
+          const alreadyOpen = overlay && overlay.classList.contains("show");
+          const currentKey = overlay?.getAttribute("data-key");
+          if (alreadyOpen && currentKey === key) {
+            hideModal();
+            return;
+          }
+
+          // build modal from DOM content (safer than trying to re-derive)
+          const title = card.querySelector(".chartTitle")?.textContent || "Chart";
+          const subtitle = `${yearTitleFromPayload(tradePayload)} • ${planet.label}`;
+
+          // Extract data-tip and colors from the small pie paths and rebuild larger pie using same data
+          const paths = Array.from(card.querySelectorAll("svg[data-pie='1'] path"));
+          if (!paths.length) return;
+
+          // We'll rebuild data by reading tooltip text and using equal ordering.
+          // For correct slice sizes, we need original values; we stored them in data-tip only.
+          // So we rebuild from the payload instead (reliable).
+          const items = tradePayload?.trade?.items || [];
+
+          let metric = null;
+          if (key.endsWith(":frequency")) metric = { k: "frequency", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
+          if (key.endsWith(":volume")) metric = { k: "volume", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
+          if (key.endsWith(":exports")) metric = { k: "exportValue", fmt: (v) => fmtUsdB(v), absSize: false, absDisp: false };
+          if (key.endsWith(":imports")) metric = { k: "importValue", fmt: (v) => fmtUsdB(v), absSize: true, absDisp: true };
+          if (!metric) return;
+
+          const pieData = buildTradePieData(items, metric.k, metric.fmt, metric.absSize, metric.absDisp);
+
+          const pieLarge = pieSvgHtml({
+            data: pieData.data,
+            total: pieData.total,
+            size: "large",
+            ariaLabel: `${title} enlarged`,
+          });
+
+          const legendHtml = `
+            <div class="legendCard">
+              <h4 class="legendTitle">All countries</h4>
+              ${legendTableHtml(pieData.data)}
+            </div>
+          `;
+
+          showModal({
+            key,
+            title,
+            subtitle,
+            pieHtml: pieLarge,
+            legendHtml,
+          });
+
+          const modalPie = document.getElementById("pieModalPie");
+          attachPieTooltipHandlers(modalPie);
+        });
+      });
     } catch (err) {
       console.error(err);
       app.innerHTML = viewError(err);
@@ -1242,19 +1344,6 @@ async function render() {
       console.error(err);
       app.innerHTML = viewError(err);
     }
-    return;
-  }
-
-  if (path === "/country") {
-    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
-    setNav(planet, "overview");
-    app.innerHTML = `
-      <section class="card">
-        <h2 class="heroTitle">Country profile (coming later)</h2>
-        <p class="small">We’ll build profiles after Overview/Trade/Resources are done.</p>
-        <p><a class="inline" href="#/planet?planet=${encodeURIComponent(planet.id)}">Back to planet</a></p>
-      </section>
-    `;
     return;
   }
 
