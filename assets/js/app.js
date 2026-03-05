@@ -50,6 +50,68 @@ function yearTitleFromPayload(payload) {
   return "Year";
 }
 
+function ensureOneModalExists() {
+  if (document.getElementById("pieModalOverlay")) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = "pieModalOverlay";
+  overlay.className = "modalOverlay";
+  overlay.innerHTML = `
+    <div class="modalCard" role="dialog" aria-modal="true" aria-label="Planet GDP details">
+      <div class="modalHeader">
+        <div class="modalTitleWrap">
+          <div class="modalTitle" id="pieModalTitle">Planet</div>
+          <div class="modalSubtitle" id="pieModalSubtitle">Year • Global GDP</div>
+        </div>
+        <button class="modalClose" id="pieModalClose" aria-label="Close">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="modalGrid">
+          <div class="modalPie" id="pieModalPie"></div>
+          <div class="modalLegend" id="pieModalLegend"></div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const closeBtn = document.getElementById("pieModalClose");
+  closeBtn.addEventListener("click", () => hideModal());
+
+  overlay.addEventListener("click", (e) => {
+    // click outside the card closes
+    if (e.target === overlay) hideModal();
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") hideModal();
+  });
+}
+
+function showModal({ title, subtitle, pieHtml, legendHtml }) {
+  ensureOneModalExists();
+  const overlay = document.getElementById("pieModalOverlay");
+  const t = document.getElementById("pieModalTitle");
+  const st = document.getElementById("pieModalSubtitle");
+  const pie = document.getElementById("pieModalPie");
+  const leg = document.getElementById("pieModalLegend");
+
+  t.textContent = title || "";
+  st.textContent = subtitle || "";
+  pie.innerHTML = pieHtml || "";
+  leg.innerHTML = legendHtml || "";
+
+  overlay.classList.add("show");
+  document.body.style.overflow = "hidden";
+}
+
+function hideModal() {
+  const overlay = document.getElementById("pieModalOverlay");
+  if (!overlay) return;
+  overlay.classList.remove("show");
+  document.body.style.overflow = "";
+}
+
 /* =========================================================
    Header/Nav
 ========================================================= */
@@ -133,6 +195,16 @@ function fmtUsdB(n) {
   const v = Number(n);
   if (!Number.isFinite(v)) return "—";
   return `$${v.toLocaleString(undefined, { maximumFractionDigits: 0 })}B`;
+}
+
+function fmtUsdTFromBillions(n) {
+  // Input is "billions" (e.g., 4172 means $4,172B). Output is "$4.2T"
+  if (n === null || n === undefined || n === "") return "—";
+  const b = Number(n);
+  if (!Number.isFinite(b)) return "—";
+  const t = b / 1000;
+  const digits = t >= 10 ? 1 : 1; // keep consistent "clean"
+  return `$${t.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits })}T`;
 }
 
 function fmtUsd(n, digits = 0) {
@@ -507,7 +579,10 @@ function pieRender(breakdown, title) {
 
   const total = data.reduce((s, x) => s + x.value, 0);
   if (!data.length || total <= 0) {
-    return { pieHtml: `<div class="small">No countries possess this resource (or all values are 0).</div>`, legendHtml: "" };
+    return {
+      pieHtml: `<div class="small">No countries possess this resource (or all values are 0).</div>`,
+      legendHtml: "",
+    };
   }
 
   const W = 720;
@@ -549,7 +624,14 @@ function pieRender(breakdown, title) {
              width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
              role="img" aria-label="Resource pie chart">
           ${slices.map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95"></path>`).join("")}
-          ${slices.map((s) => `<text x="${s.lx}" y="${s.ly}" font-size="12" text-anchor="middle">${escapeHtml(s.label)}</text>`).join("")}
+          ${slices
+            .map(
+              (s) =>
+                `<text x="${s.lx}" y="${s.ly}" font-size="12" text-anchor="middle">${escapeHtml(
+                  s.label
+                )}</text>`
+            )
+            .join("")}
         </svg>
       </div>
     </div>
@@ -563,7 +645,9 @@ function pieRender(breakdown, title) {
           <td style="width:22px;">
             <span style="display:inline-block;width:12px;height:12px;border-radius:4px;background:${color};"></span>
           </td>
-          <td style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px;">${escapeHtml(d.name)}</td>
+          <td style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px;">${escapeHtml(
+            d.name
+          )}</td>
           <td class="num" style="white-space:nowrap;">${fmtNum(d.value, 0)}</td>
         </tr>
       `;
@@ -585,52 +669,90 @@ function pieRender(breakdown, title) {
 
 /* =========================================================
    Home page GDP pies (2x2) — one per planet (exclude TEST)
+   Changes:
+   - No labels on pie (prevents overlap)
+   - No "Other" category (all countries)
+   - Values displayed as trillions ($T) converted from billions input
+   - Click card toggles modal enlargement
 ========================================================= */
 
-function gdpBreakdownFromPlanetPayload(payload, topNCount = 10) {
-  const r = payload?.rankings?.rGDP;
-  const list = Array.isArray(r) ? r : [];
-
-  const rows = list
-    .map((x) => ({ name: String(x.name || "").trim(), value: Number(x.value) }))
-    .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0)
-    .sort((a, b) => b.value - a.value);
-
-  const total = rows.reduce((s, x) => s + x.value, 0);
-
-  const top = rows.slice(0, topNCount);
-  const restSum = rows.slice(topNCount).reduce((s, x) => s + x.value, 0);
-  if (restSum > 0) top.push({ name: "Other", value: restSum });
-
-  return { total, breakdown: top };
+// GDP extraction: prefer rankings.rGDP; fallback to countries[].realGdp-like fields.
+function getCountryGdpFromCountryObj(c) {
+  const candidates = ["realGdp", "rgdp", "real_gdp", "gdp", "realGDP", "RealGDP", "Real Gdp"];
+  for (const k of candidates) {
+    const v = Number(c?.[k]);
+    if (Number.isFinite(v)) return v;
+  }
+  return 0;
 }
 
-function gdpPieCardHtml({ planetLabel, totalGdp, breakdown }) {
-  // Smallish pie per planet (fits 2x2)
-  const data = (breakdown || [])
-    .map((d) => ({ name: d.name, value: Number(d.value) }))
-    .filter((d) => d.name && Number.isFinite(d.value) && d.value > 0);
+function gdpBreakdownFromPlanetPayload(payload) {
+  // Primary: rankings.rGDP
+  const r = payload?.rankings?.rGDP;
+  const list = Array.isArray(r) ? r : null;
 
-  if (!data.length || !(totalGdp > 0)) {
-    return `
-      <div class="card" style="box-shadow:none; border:1px solid #eee;">
-        <h4 style="margin:0 0 4px 0;">${escapeHtml(planetLabel)}</h4>
-        <div class="small">Global GDP: —</div>
-        <div class="small" style="margin-top:10px;">No GDP data.</div>
-      </div>
-    `;
+  let rows = [];
+  if (list && list.length) {
+    rows = list
+      .map((x) => ({ name: String(x.name || "").trim(), value: Number(x.value) }))
+      .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0);
+  } else {
+    // Fallback: countries array
+    const countries = Array.isArray(payload?.countries) ? payload.countries : [];
+    rows = countries
+      .map((c) => ({
+        name: String(c?.name || c?.country || c?.id || "").trim(),
+        value: getCountryGdpFromCountryObj(c),
+      }))
+      .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0);
   }
 
-  const W = 420;
-  const H = 300;
+  rows.sort((a, b) => b.value - a.value);
+  const total = rows.reduce((s, x) => s + x.value, 0);
+
+  return { total, breakdown: rows };
+}
+
+function legendTableHtml_T(data) {
+  if (!Array.isArray(data) || !data.length) return "";
+
+  const rows = data
+    .map((d, i) => {
+      const color = pieColorForIndex(i, data.length);
+      return `
+        <tr>
+          <td style="width:22px;">
+            <span class="legendSwatchBox" style="background:${color};"></span>
+          </td>
+          <td class="legendName" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px;">
+            ${escapeHtml(d.name)}
+          </td>
+          <td class="legendVal">${escapeHtml(fmtUsdTFromBillions(d.value))}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  return `
+    <table class="legendTable">
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function gdpPieSvgHtml({ data, total, size = "small", ariaLabel = "GDP pie" }) {
+  if (!Array.isArray(data) || !data.length || !(total > 0)) return `<div class="small">No GDP data.</div>`;
+
+  const W = size === "large" ? 720 : 420;
+  const H = size === "large" ? 520 : 320;
   const cx = W / 2;
-  const cy = H / 2 + 6;
-  const r = 110;
+  const cy = H / 2 + (size === "large" ? 0 : 6);
+  const r = size === "large" ? 200 : 120;
 
   let start = -Math.PI / 2;
 
   const slices = data.map((d, i) => {
-    const ang = (d.value / totalGdp) * Math.PI * 2;
+    const ang = (d.value / total) * Math.PI * 2;
     const end = start + ang;
 
     const x1 = cx + r * Math.cos(start);
@@ -642,42 +764,69 @@ function gdpPieCardHtml({ planetLabel, totalGdp, breakdown }) {
     const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
     const color = pieColorForIndex(i, data.length);
 
-    // Labels: keep readable — show top slices only (exclude "Other" label if too busy)
-    const mid = (start + end) / 2;
-    const lx = cx + (r + 26) * Math.cos(mid);
-    const ly = cy + (r + 26) * Math.sin(mid);
-    const label =
-      d.name === "Other"
-        ? `Other: ${fmtUsdB(d.value)}`
-        : `${d.name}: ${fmtUsdB(d.value)}`;
-
     start = end;
-    return { path, color, lx, ly, label };
+    return { path, color };
   });
 
-  // Reduce label count if there are too many slices
-  const labelEvery = data.length > 12 ? 2 : 1;
+  // No labels on slices (prevents overlap). Legend carries names/values.
+  return `
+    <svg class="homePieSvg"
+         style="display:block; max-width:100%; height:auto;"
+         width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
+         role="img" aria-label="${escapeHtml(ariaLabel)}">
+      ${slices.map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95"></path>`).join("")}
+    </svg>
+  `;
+}
+
+function gdpPieCardHtml({ planetLabel, totalGdp, breakdown, yearLabel, planetId }) {
+  const data = (breakdown || [])
+    .map((d) => ({ name: d.name, value: Number(d.value) }))
+    .filter((d) => d.name && Number.isFinite(d.value) && d.value > 0);
+
+  if (!data.length || !(totalGdp > 0)) {
+    return `
+      <div class="homePlanetCard" data-planet="${escapeHtml(planetId)}">
+        <div class="homePlanetHeader">
+          <h4 class="homePlanetTitle">${escapeHtml(planetLabel)}</h4>
+          <div class="homePlanetSubtitle">${escapeHtml(yearLabel || "")}</div>
+        </div>
+        <div class="small">Global GDP: —</div>
+        <div class="small" style="margin-top:10px;">No GDP data.</div>
+      </div>
+    `;
+  }
+
+  const pieHtml = gdpPieSvgHtml({
+    data,
+    total: totalGdp,
+    size: "small",
+    ariaLabel: `${planetLabel} GDP pie chart`,
+  });
 
   return `
-    <div class="card" style="box-shadow:none; border:1px solid #eee;">
-      <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
-        <h4 style="margin:0 0 2px 0;">${escapeHtml(planetLabel)}</h4>
+    <div class="homePlanetCard" data-planet="${escapeHtml(planetId)}" style="cursor:pointer;">
+      <div class="homePlanetHeader">
+        <h4 class="homePlanetTitle">${escapeHtml(planetLabel)}</h4>
+        <div class="homePlanetSubtitle">${escapeHtml(yearLabel || "")}</div>
       </div>
-      <div class="small" style="margin-bottom:8px;">Global GDP: <strong>${escapeHtml(fmtUsdB(totalGdp))}</strong></div>
-      <div style="display:flex; justify-content:center;">
-        <svg style="display:block; max-width:100%; height:auto;"
-             width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
-             role="img" aria-label="${escapeHtml(planetLabel)} GDP pie chart">
-          ${slices.map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95"></path>`).join("")}
-          ${slices
-            .map((s, idx) => {
-              if (idx % labelEvery !== 0) return "";
-              return `<text x="${s.lx}" y="${s.ly}" font-size="11" text-anchor="middle">${escapeHtml(s.label)}</text>`;
-            })
-            .join("")}
-        </svg>
+
+      <div class="small" style="margin-bottom:10px;">
+        Global GDP: <strong>${escapeHtml(fmtUsdTFromBillions(totalGdp))}</strong>
       </div>
-      <div class="small" style="text-align:center; margin-top:6px;">Country shares (labels show values)</div>
+
+      <div class="homePieRow">
+        <div class="homePieBox">
+          ${pieHtml}
+        </div>
+        <div class="homeLegendBox">
+          ${legendTableHtml_T(data)}
+        </div>
+      </div>
+
+      <div class="small" style="text-align:center; margin-top:8px;">
+        Click to enlarge
+      </div>
     </div>
   `;
 }
@@ -693,26 +842,99 @@ async function renderHomeGdpPies() {
 
   try {
     const payloads = await Promise.all(
-      planetsForGrid.map((p) => fetchPlanetOverview(p.id).catch((err) => ({ ok: false, error: err?.message || String(err) })))
+      planetsForGrid.map((p) =>
+        fetchPlanetOverview(p.id).catch((err) => ({ ok: false, error: err?.message || String(err) }))
+      )
     );
 
+    // Cache the computed data for modal use
+    const modalDataByPlanet = new Map();
+
     const cards = payloads.map((pl, idx) => {
-      const planetLabel = planetsForGrid[idx]?.label || "Planet";
+      const planet = planetsForGrid[idx];
+      const planetLabel = planet?.label || "Planet";
+
       if (!pl?.ok) {
         return `
-          <div class="card" style="box-shadow:none; border:1px solid #ef4444;">
-            <h4 style="margin:0 0 4px 0;">${escapeHtml(planetLabel)}</h4>
+          <div class="homePlanetCard" data-planet="${escapeHtml(planet.id)}" style="border:1px solid #ef4444;">
+            <div class="homePlanetHeader">
+              <h4 class="homePlanetTitle">${escapeHtml(planetLabel)}</h4>
+              <div class="homePlanetSubtitle">Error</div>
+            </div>
             <div class="small">Couldn’t load GDP.</div>
-            <div class="small" style="margin-top:8px;"><strong>Error:</strong> ${escapeHtml(pl?.error || "Unknown error")}</div>
+            <div class="small" style="margin-top:8px;"><strong>Error:</strong> ${escapeHtml(
+              pl?.error || "Unknown error"
+            )}</div>
           </div>
         `;
       }
 
-      const { total, breakdown } = gdpBreakdownFromPlanetPayload(pl, 10);
-      return gdpPieCardHtml({ planetLabel, totalGdp: total, breakdown });
+      const { total, breakdown } = gdpBreakdownFromPlanetPayload(pl);
+      const yLabel = yearTitleFromPayload(pl);
+
+      modalDataByPlanet.set(planet.id, {
+        planetId: planet.id,
+        planetLabel,
+        yearLabel: yLabel,
+        total,
+        breakdown,
+      });
+
+      return gdpPieCardHtml({
+        planetId: planet.id,
+        planetLabel,
+        totalGdp: total,
+        breakdown,
+        yearLabel: yLabel,
+      });
     });
 
-    grid.innerHTML = `<div class="grid2">${cards.join("")}</div>`;
+    grid.innerHTML = `<div class="homeGrid2x2">${cards.join("")}</div>`;
+
+    // Attach click handlers for modal toggle
+    const cardEls = Array.from(grid.querySelectorAll(".homePlanetCard[data-planet]"));
+    cardEls.forEach((cardEl) => {
+      cardEl.addEventListener("click", () => {
+        const pid = cardEl.getAttribute("data-planet");
+        const data = modalDataByPlanet.get(pid);
+        if (!data || !(data.total > 0) || !Array.isArray(data.breakdown) || !data.breakdown.length) return;
+
+        const overlay = document.getElementById("pieModalOverlay");
+        const alreadyOpen = overlay && overlay.classList.contains("show");
+
+        // Toggle behavior: if same planet is open, close; else open/replace
+        const currentPlanet = overlay?.getAttribute("data-planet");
+        if (alreadyOpen && currentPlanet === pid) {
+          hideModal();
+          return;
+        }
+
+        const pieHtmlLarge = gdpPieSvgHtml({
+          data: data.breakdown,
+          total: data.total,
+          size: "large",
+          ariaLabel: `${data.planetLabel} GDP pie chart enlarged`,
+        });
+
+        const legendHtml = `
+          <div class="card" style="box-shadow:none; border:1px solid #eee; margin:0;">
+            <h4 style="margin:0 0 10px 0;">All countries</h4>
+            ${legendTableHtml_T(data.breakdown)}
+          </div>
+        `;
+
+        showModal({
+          title: data.planetLabel,
+          subtitle: `${data.yearLabel} • Global GDP: ${fmtUsdTFromBillions(data.total)}`,
+          pieHtml: pieHtmlLarge,
+          legendHtml,
+        });
+
+        // Mark which planet is open
+        const ov = document.getElementById("pieModalOverlay");
+        ov.setAttribute("data-planet", pid);
+      });
+    });
   } catch (err) {
     grid.innerHTML = `
       <div class="card" style="box-shadow:none; border:1px solid #ef4444;">
@@ -742,7 +964,7 @@ function viewChoosePlanetSkeleton() {
 
     <section class="card">
       <h3 class="sectionTitle">Global GDP by Planet</h3>
-      <p class="small">One pie per planet (2×2). Title = planet name. Subtitle = global GDP.</p>
+      <p class="small">One pie per planet (2×2). Click any chart to enlarge.</p>
       <div id="homeGdpGrid" style="margin-top:12px;"></div>
     </section>
   `;
@@ -767,7 +989,9 @@ function renderApiStatusFail(err) {
       <h3 style="margin:0 0 6px 0;">Live data NOT connected ❌</h3>
       <div class="small">API_BASE:</div>
       <div class="small"><code>${escapeHtml(API_BASE)}</code></div>
-      <div class="small" style="margin-top:10px;"><strong>Error:</strong> ${escapeHtml(err?.message || String(err))}</div>
+      <div class="small" style="margin-top:10px;"><strong>Error:</strong> ${escapeHtml(
+        err?.message || String(err)
+      )}</div>
     </div>
   `;
 }
@@ -778,7 +1002,9 @@ function planetHeader(planet, payload) {
       <div class="hstack" style="justify-content:space-between;">
         <div>
           <h2 class="heroTitle">${escapeHtml(planet.label)}</h2>
-          <div class="small">Live from API • ${escapeHtml(payload.yearTokenDisplay || "")} • ${escapeHtml(payload.yearSheet || "")}</div>
+          <div class="small">Live from API • ${escapeHtml(payload.yearTokenDisplay || "")} • ${escapeHtml(
+    payload.yearSheet || ""
+  )}</div>
         </div>
       </div>
     </section>
@@ -808,7 +1034,12 @@ function viewPlanetOverview(planet, payload) {
       <p class="small">Click any table to expand/collapse full rankings (no page refresh).</p>
       <div class="grid2">
         ${expandableRankingsTable({ id: "overview:rgdp", title: "Real GDP", rows: r.rGDP, fmtFn: fmtUsdB })}
-        ${expandableRankingsTable({ id: "overview:rgdppc", title: "Real GDP per Capita", rows: r.rGDPpc, fmtFn: (n) => fmtUsd(n, 0) })}
+        ${expandableRankingsTable({
+          id: "overview:rgdppc",
+          title: "Real GDP per Capita",
+          rows: r.rGDPpc,
+          fmtFn: (n) => fmtUsd(n, 0),
+        })}
         ${expandableRankingsTable({ id: "overview:rgdpgrowth", title: "Real GDP Growth Rate", rows: r.rGDPGrowth, fmtFn: fmtPct })}
         ${expandableRankingsTable({ id: "overview:unemp", title: "Unemployment Rate", rows: r.unemployment, fmtFn: fmtPct })}
         ${expandableRankingsTable({ id: "overview:infl", title: "Inflation Rate", rows: r.inflation, fmtFn: fmtPct })}
@@ -876,9 +1107,10 @@ function viewResources(planet, resPayload) {
 
       <div id="resTotals" class="small" style="margin-top:10px;"></div>
 
-      <div class="grid2" style="margin-top:12px; align-items:start;">
-        <div id="resPie"></div>
-        <div id="resLegend"></div>
+      <!-- Updated layout: bigger centered pie + constrained legend -->
+      <div class="resourcesLayout" style="margin-top:12px;">
+        <div class="resourcesPieBox"><div id="resPie"></div></div>
+        <div class="resourcesLegendBox"><div id="resLegend"></div></div>
       </div>
     </section>
   `;
