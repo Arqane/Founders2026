@@ -138,6 +138,10 @@ function setNav(planet = null, active = "overview") {
          style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "resources")}">
         Resources
       </a>
+      <a class="navTab" href="#/countries?planet=${encodeURIComponent(planet.id)}"
+         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "countries")}">
+        Countries
+      </a>
     </div>
   `
     : "";
@@ -219,6 +223,153 @@ function fmtNum(n, digits = 0) {
   const v = Number(n);
   if (!Number.isFinite(v)) return "—";
   return v.toLocaleString(undefined, { maximumFractionDigits: digits });
+}
+
+function ordinal(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return "—";
+  const mod100 = v % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${v}th`;
+  switch (v % 10) {
+    case 1:
+      return `${v}st`;
+    case 2:
+      return `${v}nd`;
+    case 3:
+      return `${v}rd`;
+    default:
+      return `${v}th`;
+  }
+}
+
+function normalizeId(s) {
+  return String(s ?? "").trim().toLowerCase();
+}
+
+function findCountryInPayload(payload, countryIdOrName) {
+  const countries = Array.isArray(payload?.countries) ? payload.countries : [];
+  const key = normalizeId(countryIdOrName);
+
+  return (
+    countries.find((c) => normalizeId(c?.id) === key) ||
+    countries.find((c) => normalizeId(c?.name) === key) ||
+    null
+  );
+}
+
+function getCountryEconomicSystem(country, payload) {
+  if (country?.economicSystem) return String(country.economicSystem);
+
+  const rows = Array.isArray(payload?.rankings?.economicSystem)
+    ? payload.rankings.economicSystem
+    : [];
+
+  const match = rows.find(
+    (r) =>
+      normalizeId(r?.id) === normalizeId(country?.id) ||
+      normalizeId(r?.name) === normalizeId(country?.name)
+  );
+
+  return match?.value ?? "—";
+}
+
+function getCountryRank(rankRows, country) {
+  const rows = Array.isArray(rankRows) ? rankRows : [];
+  const idx = rows.findIndex(
+    (r) =>
+      normalizeId(r?.id) === normalizeId(country?.id) ||
+      normalizeId(r?.name) === normalizeId(country?.name)
+  );
+  return idx >= 0 ? idx + 1 : null;
+}
+
+function buildCountryStatRows(country, payload) {
+  const indicators = country?.indicators || {};
+  const countryCount = Array.isArray(payload?.countries) ? payload.countries.length : 0;
+
+  const rows = [
+    {
+      label: "Real GDP",
+      valueText: fmtUsdB(indicators.rGDP),
+      rank: getCountryRank(payload?.rankings?.rGDP, country),
+    },
+    {
+      label: "Real GDP per Capita",
+      valueText: fmtUsd(indicators.rGDPpc, 0),
+      rank: getCountryRank(payload?.rankings?.rGDPpc, country),
+    },
+    {
+      label: "Real GDP Growth Rate",
+      valueText: fmtPct(indicators.rGDPGrowth),
+      rank: getCountryRank(payload?.rankings?.rGDPGrowth, country),
+    },
+    {
+      label: "Unemployment Rate",
+      valueText: fmtPct(indicators.unemployment),
+      rank: getCountryRank(payload?.rankings?.unemployment, country),
+    },
+    {
+      label: "Inflation Rate",
+      valueText: fmtPct(indicators.inflation),
+      rank: getCountryRank(payload?.rankings?.inflation, country),
+    },
+    {
+      label: "Budget Deficit/Surplus",
+      valueText: fmtUsdB(indicators.budgetDeficit),
+      rank: getCountryRank(payload?.rankings?.budgetDeficit, country),
+    },
+    {
+      label: "National Debt/Fund",
+      valueText: fmtUsdB(indicators.nationalDebt),
+      rank: getCountryRank(payload?.rankings?.nationalDebt, country),
+    },
+    {
+      label: "Federal Funds Rate",
+      valueText: fmtPct(indicators.fedFundsRate),
+      rank: getCountryRank(payload?.rankings?.fedFundsRate, country),
+    },
+    {
+      label: "Population",
+      valueText: fmtNum(indicators.population, 0),
+      rank: getCountryRank(payload?.rankings?.population, country),
+    },
+    {
+      label: "Exports",
+      valueText: fmtUsdB(indicators.exports),
+      rank: null,
+    },
+    {
+      label: "Imports",
+      valueText: fmtUsdB(indicators.imports),
+      rank: null,
+    },
+    {
+      label: "Trade Balance",
+      valueText: fmtUsdB(indicators.tradeBalance),
+      rank: null,
+    },
+  ];
+
+  return rows.map((row) => ({
+    ...row,
+    rankingText: row.rank && countryCount ? `${ordinal(row.rank)} out of ${countryCount}` : "—",
+  }));
+}
+
+function buildCountryResourcesPie(country) {
+  const data = (country?.resources || [])
+    .map((r) => ({
+      name: String(r?.name || "").trim(),
+      value: Number(r?.quantity),
+      sortValue: Number(r?.quantity),
+      displayValueText: fmtNum(r?.quantity, 0),
+      share: Number(r?.share),
+    }))
+    .filter((r) => r.name && Number.isFinite(r.value) && r.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  const total = data.reduce((s, d) => s + d.value, 0);
+  return { data, total };
 }
 
 /* =========================================================
@@ -364,8 +515,7 @@ function legendHtml() {
         `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
     )
     .join("");
-  //return `<div class="graphLegend">${items}</div>`;
-return `<div class="graphLegendWrap"><div class="graphLegend">${items}</div></div>`;
+  return `<div class="graphLegendWrap"><div class="graphLegend">${items}</div></div>`;
 }
 
 function edgeTooltipText(edge) {
@@ -660,7 +810,10 @@ function buildTradePieData(items, key, formatter, useAbsForSize = false, useAbsF
     .filter(Boolean)
     .sort((a, b) => (b.sortValue ?? 0) - (a.sortValue ?? 0));
 
-  const total = data.reduce((s, d) => s + (Number.isFinite(Number(d.sortValue)) ? Number(d.sortValue) : Number(d.value)), 0);
+  const total = data.reduce(
+    (s, d) => s + (Number.isFinite(Number(d.sortValue)) ? Number(d.sortValue) : Number(d.value)),
+    0
+  );
   return { data, total };
 }
 
@@ -807,12 +960,10 @@ async function renderHomeGdpPies() {
 
     grid.innerHTML = `<div class="homeGrid2x2">${cards.join("")}</div>`;
 
-    // tooltips for all home pies
     Array.from(grid.querySelectorAll(".homePlanetCard")).forEach((card) => {
       attachPieTooltipHandlers(card);
     });
 
-    // click-to-enlarge
     Array.from(grid.querySelectorAll("[data-chartkey]")).forEach((cardEl) => {
       cardEl.addEventListener("click", () => {
         const key = cardEl.getAttribute("data-chartkey");
@@ -851,7 +1002,6 @@ async function renderHomeGdpPies() {
           legendHtml,
         });
 
-        // tooltip in modal pie
         const modalPie = document.getElementById("pieModalPie");
         attachPieTooltipHandlers(modalPie);
       });
@@ -960,14 +1110,54 @@ function viewPlanetOverview(planet, payload) {
           rows: r.rGDPpc,
           fmtFn: (n) => fmtUsd(n, 0),
         })}
-        ${expandableRankingsTable({ id: "overview:rgdpgrowth", title: "Real GDP Growth Rate", rows: r.rGDPGrowth, fmtFn: fmtPct })}
-        ${expandableRankingsTable({ id: "overview:unemp", title: "Unemployment Rate", rows: r.unemployment, fmtFn: fmtPct })}
-        ${expandableRankingsTable({ id: "overview:infl", title: "Inflation Rate", rows: r.inflation, fmtFn: fmtPct })}
-        ${expandableRankingsTable({ id: "overview:budget", title: "Budget Deficit/Surplus", rows: r.budgetDeficit, fmtFn: fmtUsdB })}
-        ${expandableRankingsTable({ id: "overview:debt", title: "National Debt/Fund", rows: r.nationalDebt, fmtFn: fmtUsdB })}
-        ${expandableRankingsTable({ id: "overview:ffr", title: "Federal Funds Rate", rows: r.fedFundsRate, fmtFn: fmtPct })}
-        ${expandableRankingsTable({ id: "overview:pop", title: "Total Population", rows: r.population, fmtFn: (n) => fmtNum(n, 0) })}
-        ${expandableRankingsTable({ id: "overview:system", title: "Economic System", rows: r.economicSystem, fmtFn: (v) => escapeHtml(v) })}
+        ${expandableRankingsTable({
+          id: "overview:rgdpgrowth",
+          title: "Real GDP Growth Rate",
+          rows: r.rGDPGrowth,
+          fmtFn: fmtPct,
+        })}
+        ${expandableRankingsTable({
+          id: "overview:unemp",
+          title: "Unemployment Rate",
+          rows: r.unemployment,
+          fmtFn: fmtPct,
+        })}
+        ${expandableRankingsTable({
+          id: "overview:infl",
+          title: "Inflation Rate",
+          rows: r.inflation,
+          fmtFn: fmtPct,
+        })}
+        ${expandableRankingsTable({
+          id: "overview:budget",
+          title: "Budget Deficit/Surplus",
+          rows: r.budgetDeficit,
+          fmtFn: fmtUsdB,
+        })}
+        ${expandableRankingsTable({
+          id: "overview:debt",
+          title: "National Debt/Fund",
+          rows: r.nationalDebt,
+          fmtFn: fmtUsdB,
+        })}
+        ${expandableRankingsTable({
+          id: "overview:ffr",
+          title: "Federal Funds Rate",
+          rows: r.fedFundsRate,
+          fmtFn: fmtPct,
+        })}
+        ${expandableRankingsTable({
+          id: "overview:pop",
+          title: "Total Population",
+          rows: r.population,
+          fmtFn: (n) => fmtNum(n, 0),
+        })}
+        ${expandableRankingsTable({
+          id: "overview:system",
+          title: "Economic System",
+          rows: r.economicSystem,
+          fmtFn: (v) => escapeHtml(v),
+        })}
       </div>
     </section>
   `;
@@ -982,11 +1172,9 @@ function viewTrade(planet, overviewPayload, tradePayload) {
   const expRank = rankFromTradeItems(items, "exportValue", "desc", false);
   const impRankAbs = rankFromTradeItems(items, "importValue", "desc", true);
 
-  // Pie charts above tables (replace bar charts)
   const freqPie = buildTradePieData(items, "frequency", (v) => fmtNum(v, 0), false, false);
   const volPie = buildTradePieData(items, "volume", (v) => fmtNum(v, 0), false, false);
   const expPie = buildTradePieData(items, "exportValue", (v) => fmtUsdB(v), false, false);
-  // imports: sizes and display use ABS
   const impPie = buildTradePieData(items, "importValue", (v) => fmtUsdB(v), true, true);
 
   const keyBase = `trade:${planet.id}:${tradePayload?.year ?? ""}`;
@@ -1037,10 +1225,30 @@ function viewTrade(planet, overviewPayload, tradePayload) {
       <p class="small">Click any table to expand/collapse full rankings (no page refresh).</p>
 
       <div class="grid2">
-        ${expandableRankingsTable({ id: "trade:freq", title: "Trade Frequency", rows: freqRank, fmtFn: (n) => fmtNum(n, 0) })}
-        ${expandableRankingsTable({ id: "trade:vol", title: "Trade Volume", rows: volRank, fmtFn: (n) => fmtNum(n, 0) })}
-        ${expandableRankingsTable({ id: "trade:exports", title: "Export Value ($B)", rows: expRank, fmtFn: fmtUsdB })}
-        ${expandableRankingsTable({ id: "trade:imports", title: "Import Value ($B)", rows: impRankAbs, fmtFn: (v) => fmtUsdB(Math.abs(v)) })}
+        ${expandableRankingsTable({
+          id: "trade:freq",
+          title: "Trade Frequency",
+          rows: freqRank,
+          fmtFn: (n) => fmtNum(n, 0),
+        })}
+        ${expandableRankingsTable({
+          id: "trade:vol",
+          title: "Trade Volume",
+          rows: volRank,
+          fmtFn: (n) => fmtNum(n, 0),
+        })}
+        ${expandableRankingsTable({
+          id: "trade:exports",
+          title: "Export Value ($B)",
+          rows: expRank,
+          fmtFn: fmtUsdB,
+        })}
+        ${expandableRankingsTable({
+          id: "trade:imports",
+          title: "Import Value ($B)",
+          rows: impRankAbs,
+          fmtFn: (v) => fmtUsdB(Math.abs(v)),
+        })}
       </div>
     </section>
   `;
@@ -1078,6 +1286,154 @@ function viewResources(planet, resPayload) {
   `;
 }
 
+function viewCountriesList(planet, payload) {
+  const countries = Array.isArray(payload?.countries) ? [...payload.countries] : [];
+  countries.sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || "")));
+
+  const cards = countries
+    .map((c) => {
+      const econ = getCountryEconomicSystem(c, payload);
+      const rgdp = c?.indicators?.rGDP;
+      const pop = c?.indicators?.population;
+
+      return `
+        <a class="countryListCard" href="#/country?planet=${encodeURIComponent(planet.id)}&country=${encodeURIComponent(
+        c.id || c.name
+      )}">
+          <div class="countryListHeader">
+            <h4 class="countryListTitle">${escapeHtml(c?.name || "Unnamed Country")}</h4>
+            <div class="countryListMeta">${escapeHtml(econ || "—")}</div>
+          </div>
+          <div class="small"><strong>Demonym:</strong> ${escapeHtml(c?.demonym || "—")}</div>
+          <div class="small"><strong>Motto:</strong> ${escapeHtml(c?.motto || "—")}</div>
+          <div class="small" style="margin-top:8px;"><strong>Real GDP:</strong> ${escapeHtml(fmtUsdB(rgdp))}</div>
+          <div class="small"><strong>Population:</strong> ${escapeHtml(fmtNum(pop, 0))}</div>
+        </a>
+      `;
+    })
+    .join("");
+
+  return `
+    ${planetHeader(planet, payload)}
+
+    <section class="card">
+      <h3 class="sectionTitle">Countries</h3>
+      <p class="small">Select a country to open its profile page.</p>
+      <div class="countryListGrid">
+        ${cards || `<div class="small">No countries found.</div>`}
+      </div>
+    </section>
+  `;
+}
+
+function viewCountryProfile(planet, payload, country) {
+  const yTitle = yearTitleFromPayload(payload);
+  const economicSystem = getCountryEconomicSystem(country, payload);
+  const stats = buildCountryStatRows(country, payload);
+  const { data, total } = buildCountryResourcesPie(country);
+
+  const pieHtml = pieSvgHtml({
+    data,
+    total,
+    size: "small",
+    ariaLabel: `${country?.name || "Country"} resources`,
+  });
+
+  const resourceRows = (country?.resources || [])
+    .slice()
+    .sort((a, b) => Number(b?.quantity || 0) - Number(a?.quantity || 0));
+
+  const resourcesLegend =
+    resourceRows.length > 0
+      ? `
+      <table class="legendTable">
+        <tbody>
+          ${resourceRows
+            .map(
+              (r, i, arr) => `
+              <tr>
+                <td class="legendSwatchCell"><span class="legendSwatchBox" style="background:${pieColorForIndex(
+                  i,
+                  arr.length
+                )};"></span></td>
+                <td class="legendName">${escapeHtml(r?.name || "—")}</td>
+                <td class="legendVal">${escapeHtml(fmtNum(r?.quantity, 0))}</td>
+              </tr>
+            `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    `
+      : `<div class="small">No resources listed.</div>`;
+
+  const statRowsHtml = stats
+    .map(
+      (row) => `
+      <tr>
+        <td>${escapeHtml(row.label)}</td>
+        <td class="num">${escapeHtml(row.valueText)}</td>
+        <td class="num">${escapeHtml(row.rankingText)}</td>
+      </tr>
+    `
+    )
+    .join("");
+
+  return `
+    ${planetHeader(planet, payload)}
+
+    <section class="card">
+      <div class="countryProfileTop">
+        <div>
+          <div class="small" style="margin-bottom:8px;">
+            <a class="inline" href="#/countries?planet=${encodeURIComponent(planet.id)}">← Back to Countries</a>
+          </div>
+          <h2 class="heroTitle" style="margin-bottom:10px;">${escapeHtml(country?.name || "Country")}</h2>
+          <div class="countryMetaGrid">
+            <div class="countryMetaItem">
+              <div class="countryMetaLabel">Economic System</div>
+              <div class="countryMetaValue">${escapeHtml(economicSystem)}</div>
+            </div>
+            <div class="countryMetaItem">
+              <div class="countryMetaLabel">Demonym</div>
+              <div class="countryMetaValue">${escapeHtml(country?.demonym || "—")}</div>
+            </div>
+            <div class="countryMetaItem countryMetaWide">
+              <div class="countryMetaLabel">Motto</div>
+              <div class="countryMetaValue">${escapeHtml(country?.motto || "—")}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">Resource Breakdown</h3>
+      <div class="chartRow">
+        <div class="chartPieBox">${pieHtml}</div>
+        <div class="chartLegendBox">${resourcesLegend}</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">${escapeHtml(yTitle)} Key Economic Data</h3>
+      <p class="small">Each row shows the country value and its global ranking for the current year.</p>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th class="num">Value</th>
+            <th class="num">Global Rank</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${statRowsHtml}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
 function attachResourcesHandlers(resPayload) {
   const sel = document.getElementById("resSelect");
   const totalsEl = document.getElementById("resTotals");
@@ -1093,8 +1449,6 @@ function attachResourcesHandlers(resPayload) {
     const total = totalMap.get(resource);
     totalsEl.innerHTML = `World total: <strong>${fmtNum(total, 0)}</strong>`;
 
-    // Keep your existing resource pie behavior (labels as values)
-    // (Not changing this since your request was about planet + trade pies)
     const breakdown = breakdownByResource[resource] || [];
     const data = (breakdown || [])
       .map((x) => ({ name: String(x.name || ""), value: Number(x.value) }))
@@ -1108,7 +1462,6 @@ function attachResourcesHandlers(resPayload) {
       return;
     }
 
-    // render resources pie with labels as values (your existing rule)
     const W = 720;
     const H = 480;
     const cx = W / 2;
@@ -1252,17 +1605,12 @@ async function render() {
 
       app.innerHTML = viewTrade(planet, overviewPayload, tradePayload);
 
-      // diplomacy
       attachDiplomacyTooltipHandlers();
       attachDiplomacyFocusHandlers();
-
-      // expandable tables
       attachExpandableTableHandlers();
 
-      // tooltips on trade pies
       document.querySelectorAll(".chartCard").forEach((card) => attachPieTooltipHandlers(card));
 
-      // modal toggle for trade pies (same rules as home pies)
       document.querySelectorAll(".chartCard[data-chartkey]").forEach((card) => {
         card.addEventListener("click", () => {
           const key = card.getAttribute("data-chartkey");
@@ -1276,17 +1624,12 @@ async function render() {
             return;
           }
 
-          // build modal from DOM content (safer than trying to re-derive)
           const title = card.querySelector(".chartTitle")?.textContent || "Chart";
           const subtitle = `${yearTitleFromPayload(tradePayload)} • ${planet.label}`;
 
-          // Extract data-tip and colors from the small pie paths and rebuild larger pie using same data
           const paths = Array.from(card.querySelectorAll("svg[data-pie='1'] path"));
           if (!paths.length) return;
 
-          // We'll rebuild data by reading tooltip text and using equal ordering.
-          // For correct slice sizes, we need original values; we stored them in data-tip only.
-          // So we rebuild from the payload instead (reliable).
           const items = tradePayload?.trade?.items || [];
 
           let metric = null;
@@ -1341,6 +1684,47 @@ async function render() {
 
       app.innerHTML = viewResources(planet, resPayload);
       attachResourcesHandlers(resPayload);
+    } catch (err) {
+      console.error(err);
+      app.innerHTML = viewError(err);
+    }
+    return;
+  }
+
+  if (path === "/countries") {
+    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
+    setNav(planet, "countries");
+    app.innerHTML = viewLoading(`Loading Countries • ${planet.label}`);
+    try {
+      const payload = await fetchPlanetOverview(planet.id);
+      if (!payload?.ok) throw new Error(payload?.error || "API returned ok=false");
+
+      app.innerHTML = viewCountriesList(planet, payload);
+    } catch (err) {
+      console.error(err);
+      app.innerHTML = viewError(err);
+    }
+    return;
+  }
+
+  if (path === "/country") {
+    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
+    const countryKey = params.get("country");
+
+    setNav(planet, "countries");
+    app.innerHTML = viewLoading(`Loading Country • ${planet.label}`);
+
+    try {
+      const payload = await fetchPlanetOverview(planet.id);
+      if (!payload?.ok) throw new Error(payload?.error || "API returned ok=false");
+
+      const country = findCountryInPayload(payload, countryKey);
+      if (!country) throw new Error(`Country not found: ${countryKey || "unknown"}`);
+
+      app.innerHTML = viewCountryProfile(planet, payload, country);
+
+      const profileCard = document.querySelector(".chartPieBox");
+      if (profileCard) attachPieTooltipHandlers(profileCard);
     } catch (err) {
       console.error(err);
       app.innerHTML = viewError(err);
