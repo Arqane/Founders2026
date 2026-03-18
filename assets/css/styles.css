@@ -397,3 +397,95 @@ a.inline:hover { text-decoration:underline; }
 .graphLegendWrap .graphLegend {
   display: inline-flex; /* keeps your existing flex layout but allows centering via wrapper */
 }
+
+/* =========================================================
+   Countries
+========================================================= */
+
+.countryListGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 900px) {
+  .countryListGrid { grid-template-columns: 1fr; }
+}
+
+.countryListCard {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.06);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, border-color 0.08s ease;
+}
+.countryListCard:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0,0,0,.08);
+  border-color: #d1d5db;
+}
+
+.countryListHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.countryListTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.countryListMeta {
+  font-size: 12px;
+  color: #444;
+  white-space: nowrap;
+}
+
+.countryProfileTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.countryMetaGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+@media (max-width: 900px) {
+  .countryMetaGrid { grid-template-columns: 1fr; }
+}
+
+.countryMetaItem {
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.countryMetaWide {
+  grid-column: 1 / -1;
+}
+
+.countryMetaLabel {
+  font-size: 12px;
+  color: #444;
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+.countryMetaValue {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.35;
+}
