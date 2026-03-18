@@ -295,6 +295,34 @@ function getTradeItemForCountry(tradePayload, country) {
   );
 }
 
+function getTradeRank(tradePayload, country, key, dir = "desc", useAbs = false) {
+  const items = Array.isArray(tradePayload?.trade?.items) ? tradePayload.trade.items : [];
+
+  const ranked = items
+    .map((x) => {
+      const raw = Number(x?.[key]);
+      if (!Number.isFinite(raw)) return null;
+      return {
+        id: x?.id,
+        name: x?.name,
+        value: raw,
+        sortValue: useAbs ? Math.abs(raw) : raw,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      return dir === "asc" ? a.sortValue - b.sortValue : b.sortValue - a.sortValue;
+    });
+
+  const idx = ranked.findIndex(
+    (x) =>
+      normalizeId(x?.id) === normalizeId(country?.id) ||
+      normalizeId(x?.name) === normalizeId(country?.name)
+  );
+
+  return idx >= 0 ? idx + 1 : null;
+}
+
 function getCountryResourcesFromPayload(resourcesPayload, country) {
   const breakdownByResource = resourcesPayload?.resources?.breakdownByResource || {};
   const resources = [];
@@ -328,7 +356,10 @@ function getCountryResourcesFromPayload(resourcesPayload, country) {
 function buildCountryStatRows(country, overviewPayload, tradePayload) {
   const indicators = country?.indicators || {};
   const tradeItem = getTradeItemForCountry(tradePayload, country);
-  const countryCount = Array.isArray(overviewPayload?.countries) ? overviewPayload.countries.length : 0;
+
+  const overviewCountryCount = Array.isArray(overviewPayload?.countries) ? overviewPayload.countries.length : 0;
+  const tradeItems = Array.isArray(tradePayload?.trade?.items) ? tradePayload.trade.items : [];
+  const tradeCountryCount = tradeItems.length;
 
   const exportValue = Number(tradeItem?.exportValue);
   const importValue = Number(tradeItem?.importValue);
@@ -342,77 +373,91 @@ function buildCountryStatRows(country, overviewPayload, tradePayload) {
       label: "Real GDP",
       valueText: fmtUsdB(indicators.rGDP),
       rank: getCountryRank(overviewPayload?.rankings?.rGDP, country),
+      rankBase: overviewCountryCount,
     },
     {
       label: "Real GDP per Capita",
       valueText: fmtUsd(indicators.rGDPpc, 0),
       rank: getCountryRank(overviewPayload?.rankings?.rGDPpc, country),
+      rankBase: overviewCountryCount,
     },
     {
       label: "Real GDP Growth Rate",
       valueText: fmtPct(indicators.rGDPGrowth),
       rank: getCountryRank(overviewPayload?.rankings?.rGDPGrowth, country),
+      rankBase: overviewCountryCount,
     },
     {
       label: "Unemployment Rate",
       valueText: fmtPct(indicators.unemployment),
       rank: getCountryRank(overviewPayload?.rankings?.unemployment, country),
+      rankBase: overviewCountryCount,
     },
     {
       label: "Inflation Rate",
       valueText: fmtPct(indicators.inflation),
       rank: getCountryRank(overviewPayload?.rankings?.inflation, country),
+      rankBase: overviewCountryCount,
     },
     {
       label: "Budget Deficit/Surplus",
       valueText: fmtUsdB(indicators.budgetDeficit),
       rank: getCountryRank(overviewPayload?.rankings?.budgetDeficit, country),
+      rankBase: overviewCountryCount,
     },
     {
       label: "National Debt/Fund",
       valueText: fmtUsdB(indicators.nationalDebt),
       rank: getCountryRank(overviewPayload?.rankings?.nationalDebt, country),
+      rankBase: overviewCountryCount,
     },
     {
       label: "Federal Funds Rate",
       valueText: fmtPct(indicators.fedFundsRate),
       rank: getCountryRank(overviewPayload?.rankings?.fedFundsRate, country),
+      rankBase: overviewCountryCount,
     },
     {
       label: "Population",
       valueText: fmtNum(indicators.population, 0),
       rank: getCountryRank(overviewPayload?.rankings?.population, country),
+      rankBase: overviewCountryCount,
     },
     {
       label: "Trade Frequency",
       valueText: fmtNum(tradeItem?.frequency, 0),
-      rank: null,
+      rank: getTradeRank(tradePayload, country, "frequency", "desc", false),
+      rankBase: tradeCountryCount,
     },
     {
       label: "Trade Volume",
       valueText: fmtNum(tradeItem?.volume, 0),
-      rank: null,
+      rank: getTradeRank(tradePayload, country, "volume", "desc", false),
+      rankBase: tradeCountryCount,
     },
     {
       label: "Exports",
       valueText: fmtUsdB(tradeItem?.exportValue),
-      rank: null,
+      rank: getTradeRank(tradePayload, country, "exportValue", "desc", false),
+      rankBase: tradeCountryCount,
     },
     {
       label: "Imports",
       valueText: fmtUsdB(tradeItem?.importValue),
-      rank: null,
+      rank: getTradeRank(tradePayload, country, "importValue", "desc", true),
+      rankBase: tradeCountryCount,
     },
     {
       label: "Trade Balance",
       valueText: fmtUsdB(tradeBalance),
       rank: null,
+      rankBase: null,
     },
   ];
 
   return rows.map((row) => ({
     ...row,
-    rankingText: row.rank && countryCount ? `${ordinal(row.rank)} out of ${countryCount}` : "—",
+    rankingText: row.rank && row.rankBase ? `${ordinal(row.rank)} out of ${row.rankBase}` : "—",
   }));
 }
 
