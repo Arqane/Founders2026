@@ -1,33 +1,491 @@
-// assets/js/config.js
+:root { font-family: system-ui, Arial, sans-serif; }
+body { margin: 0; background: #f6f7fb; color: #111; }
 
-export const API_BASE =
-  "https://script.google.com/macros/s/AKfycbwZ-QIjMGQsmeS_z8WDtzndBcJ5XfsYPPoMsINuVPBAo0zm3TK7rDq4CaRNynTB1Unm/exec";
+.topbar {
+  padding: 16px 20px;
+  background: #111;
+  color: #fff;
+  display:flex;
+  gap:16px;
+  align-items:center;
+  justify-content: space-between;
+}
+.brand { font-size: 18px; margin: 0; }
 
-export const PLANETS = [
-  { id: "test",     label: "TEST",     spreadsheetId: "1TkHl3TI0ADTgnOOykI8AEJY1JxIO1nKgCBroI25cuCQ" },
-  { id: "parallax", label: "Parallax", spreadsheetId: "1JdpKT4ojvIonDcqns0vIiCmY99I4d9FI6M8LoONfWAA" },
-  { id: "cyqs",     label: "Cyq`s",    spreadsheetId: "1A3muixDdn4Z62YxX6YexukNci1E8RzHGu_5z11Csdwg" },
-  { id: "sevyr",    label: "Sevyr",    spreadsheetId: "10KK5Pam7HI6EEY0SGlGQFXxoa0rVJ6eQ4v0YVlP4oJA" },
-  { id: "octavium", label: "Octavium", spreadsheetId: "1v4dM17_x9aWs5bb6TF64JbSvcf3VOcn3fsEnQyTK7_k" },
-];
+.nav { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+.nav a {
+  color:#fff;
+  text-decoration:none;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,.15);
+  font-size: 14px;
+}
+.nav a:hover { background: rgba(255,255,255,.08); }
 
-// Planets to show on the HOME GDP pie grid (2x2). (Exclude TEST.)
-export const HOME_PLANET_IDS = ["parallax", "cyqs", "sevyr", "octavium"];
+.container { padding: 20px; max-width: 1100px; margin: 0 auto; }
 
-// GDP pie behavior (used on home page)
-export const HOME_GDP_PIE = {
-  // Any slice below this fraction of total GDP can be grouped into "Other"
-  groupOtherBelowFraction: 0.03, // 3%
-  // Also group if more than this number of slices
-  maxSlicesBeforeGrouping: 10,
-};
+.card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.06);
+  margin-bottom: 16px;
+}
 
-// Diplomacy relationship styles
-export const RELATIONSHIP_STYLES = {
-  ally:     { label: "Ally",     color: "#2563eb" }, // Blue
-  friendly: { label: "Friendly", color: "#22c55e" }, // Green
-  neutral:  { label: "Neutral",  color: "#374151" }, // Dark gray
-  tense:    { label: "Tense",    color: "#facc15" }, // Yellow
-  hostile:  { label: "Hostile",  color: "#f97316" }, // Orange
-  war:      { label: "War",      color: "#ef4444" }, // Red
-};
+.hstack { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.vstack { display:flex; flex-direction:column; gap:10px; }
+
+.buttonRow { display:flex; flex-wrap:wrap; gap:10px; }
+button {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  background:#fff;
+  cursor:pointer;
+}
+button:hover { background:#f0f2f7; }
+
+.table { width:100%; border-collapse: collapse; }
+.table th, .table td { border:1px solid #e6e6e6; padding: 8px; text-align:left; }
+.table th { background:#fafafa; }
+.table td.num, .table th.num { text-align:right; }
+
+.badge { display:inline-block; padding: 2px 8px; border-radius: 999px; background:#eee; font-size: 12px; }
+.small { font-size: 12px; color:#444; }
+
+a.inline { color:#0b57d0; text-decoration:none; }
+a.inline:hover { text-decoration:underline; }
+
+.grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+
+.heroTitle { margin: 0 0 6px 0; font-size: 22px; }
+
+/* Bigger/more distinct subheadings site-wide */
+.sectionTitle {
+  margin: 0 0 12px 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.flag {
+  width: 140px;
+  height: 84px;
+  border-radius: 10px;
+  border: 1px solid #e6e6e6;
+  background: #fff;
+  object-fit: cover;
+}
+
+.graphWrap {
+  width: 100%;
+  overflow: auto;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  background: radial-gradient(circle at 50% 40%, #1a1a1a, #0b0b0b);
+  padding: 10px;
+}
+
+.graphLegend { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
+.legendItem { display:flex; gap:8px; align-items:center; font-size: 12px; color:#333; }
+.legendSwatch { width:16px; height:3px; border-radius: 999px; background:#999; }
+
+.nodeLabel { font-size: 12px; fill: #fff; opacity: 0.95; }
+.nodeCircle { stroke: rgba(255,255,255,.35); stroke-width: 2; }
+
+/* ----- Pie tooltip (used by home + trade + modal) ----- */
+
+.pieWrap {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.pieTooltip {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, -120%);
+  padding: 6px 8px;
+  background: rgba(17,17,17,0.92);
+  color: #fff;
+  border-radius: 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0,0,0,.15);
+  opacity: 0;
+  transition: opacity 80ms linear;
+  z-index: 20;
+}
+
+.pieTooltip.show { opacity: 1; }
+
+/* Diplomacy hover tooltip */
+.graphWrap { position: relative; }
+
+.dipTooltip {
+  position: absolute;
+  transform: translate(10px, 10px);
+  background: rgba(15, 23, 42, 0.92);
+  color: white;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.08s linear;
+  max-width: 260px;
+  z-index: 10;
+}
+
+.dipTooltip.show { opacity: 1; }
+
+.dipNode { cursor: pointer; }
+.dipNode.focused .nodeDot { stroke: rgba(255,255,255,0.9); stroke-width: 3; }
+
+.dim { opacity: 0.10 !important; }
+
+.navTabs { margin-left: 10px; }
+.navTab { margin-left: 10px; opacity: 0.8; text-decoration: none; }
+.navTab.active { opacity: 1; text-decoration: underline; }
+
+.dipTooltip { pointer-events: none; } /* prevents tooltip “stealing” hover */
+
+.num { text-align: right; white-space: nowrap; }
+.table td.num, .table th.num { white-space: nowrap; }
+
+/* =========================================================
+   HOME GDP pies + Trade pie cards
+========================================================= */
+
+.homeGrid2x2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 900px) { .homeGrid2x2 { grid-template-columns: 1fr; } }
+
+.homePlanetCard {
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.06);
+  border: 1px solid #eee;
+}
+
+.homePlanetHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.homePlanetTitle { margin: 0; font-size: 16px; }
+.homePlanetSubtitle { font-size: 12px; color: #444; white-space: nowrap; }
+
+.homePieRow {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 12px;
+  align-items: center;
+}
+@media (max-width: 900px) { .homePieRow { grid-template-columns: 1fr; } }
+
+.homePieBox { display: flex; justify-content: center; align-items: center; }
+
+.homePieBox svg { max-width: 100%; height: auto; }
+
+/* Trade chart cards (same layout as home pies) */
+.chartCard {
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px;
+  border: 1px solid #eee;
+  box-shadow: 0 2px 12px rgba(0,0,0,.06);
+}
+
+.chartHeader { display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.chartTitle { margin:0; font-size:16px; }
+.chartSubtitle { font-size:12px; color:#444; }
+
+.chartRow {
+  display:grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap:12px;
+  align-items:center;
+}
+@media (max-width: 900px) { .chartRow { grid-template-columns: 1fr; } }
+
+.chartPieBox { display:flex; justify-content:center; align-items:center; }
+.chartLegendBox {
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 8px;
+  background: #fff;
+}
+
+/* Legend: condensed + wrap, no horizontal scrolling */
+.legendTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  table-layout: fixed;
+}
+
+.legendTable td {
+  padding: 6px 6px;
+  border-bottom: 1px solid #eee;
+  vertical-align: top;
+}
+
+.legendTable tr:last-child td { border-bottom: none; }
+
+.legendSwatchCell { width: 22px; }
+.legendSwatchBox {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+  border: 1px solid rgba(0,0,0,.15);
+  margin-top: 2px;
+}
+
+.legendName {
+  font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.legendVal {
+  text-align: right;
+  white-space: nowrap;
+  color: #333;
+  width: 76px;
+}
+
+/* Home legend box */
+.homeLegendBox {
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 8px;
+  background: #fff;
+}
+
+/* =========================================================
+   Resources layout
+========================================================= */
+
+.resourcesLayout {
+  display: grid;
+  grid-template-columns: 1.25fr 0.75fr;
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 900px) { .resourcesLayout { grid-template-columns: 1fr; } }
+
+.resourcesPieBox { display: flex; justify-content: center; align-items: center; }
+
+.resourcesPieBox svg {
+  max-width: min(640px, 100%);
+  height: auto;
+}
+
+.resourcesLegendBox {
+  max-height: 640px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 8px;
+  background: #fff;
+}
+
+/* =========================================================
+   Modal (click-to-enlarge pies)
+========================================================= */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.55);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  z-index: 9999;
+}
+
+.modalOverlay.show { display: flex; }
+
+.modalCard {
+  width: min(1100px, 100%);
+  max-height: min(90vh, 900px);
+  overflow: hidden;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.35);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.25);
+  display: flex;
+  flex-direction: column;
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.modalTitleWrap { display: flex; flex-direction: column; gap: 4px; }
+.modalTitle { font-size: 16px; font-weight: 800; }
+.modalSubtitle { font-size: 12px; color: #444; }
+
+.modalClose {
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.modalClose:hover { background: #f0f2f7; }
+
+.modalBody {
+  padding: 14px 16px 16px 16px;
+  overflow: auto;
+}
+
+.modalGrid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 900px) { .modalGrid { grid-template-columns: 1fr; } }
+
+.modalPie { display: flex; justify-content: center; align-items: center; }
+
+.modalPie svg { max-width: 100%; height: auto; }
+
+.modalLegend {
+  max-height: 70vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Reusable legend card inside modal */
+.legendCard {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #eee;
+  padding: 10px;
+}
+
+.legendTitle { margin: 0 0 10px 0; font-size: 14px; font-weight: 800; }
+
+/* Center the diplomacy color key WITHOUT changing existing legend styling */
+.graphLegendWrap {
+  text-align: center;
+}
+
+.graphLegendWrap .graphLegend {
+  display: inline-flex;
+}
+
+/* =========================================================
+   Countries
+========================================================= */
+
+.countryListGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 900px) {
+  .countryListGrid { grid-template-columns: 1fr; }
+}
+
+.countryListCard {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.06);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, border-color 0.08s ease;
+}
+.countryListCard:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0,0,0,.08);
+  border-color: #d1d5db;
+}
+
+.countryListHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.countryListTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.countryListMeta {
+  font-size: 12px;
+  color: #444;
+  white-space: nowrap;
+}
+
+.countryProfileTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.countryMetaGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+@media (max-width: 900px) {
+  .countryMetaGrid { grid-template-columns: 1fr; }
+}
+
+.countryMetaItem {
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.countryMetaWide {
+  grid-column: 1 / -1;
+}
+
+.countryMetaLabel {
+  font-size: 12px;
+  color: #444;
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+.countryMetaValue {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.35;
+}
