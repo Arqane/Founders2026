@@ -646,23 +646,30 @@ function diplomacyWebSvgFromEdges(countries, edges) {
 
   const nodeMap = new Map(nodes.map((nn) => [nn.id, nn]));
 
-  const edgeLines = (edges || [])
-    .map((e) => {
-      const A = nodeMap.get(e.aId);
-      const B = nodeMap.get(e.bId);
-      if (!A || !B) return "";
-      const style = RELATIONSHIP_STYLES[e.key] || RELATIONSHIP_STYLES.neutral;
+const edgeLines = (edges || [])
+  .filter((e) => {
+    const relText = String(e?.relationship || "").trim().toLowerCase();
+    const keyText = String(e?.key || "").trim().toLowerCase();
+    return relText !== "none" && keyText !== "none";
+  })
+  .map((e) => {
+    const A = nodeMap.get(e.aId);
+    const B = nodeMap.get(e.bId);
+    if (!A || !B) return "";
 
-      const tip = edgeTooltipText(e);
-      const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
+    const keyText = String(e?.key || "").trim().toLowerCase();
+    const style = RELATIONSHIP_STYLES[keyText] || RELATIONSHIP_STYLES.neutral;
 
-      return `<line class="dipEdge" ${tipAttr}
-        data-aid="${escapeHtml(e.aId)}" data-bid="${escapeHtml(e.bId)}"
-        x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
-        x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
-        stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
-    })
-    .join("");
+    const tip = edgeTooltipText(e);
+    const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
+
+    return `<line class="dipEdge" ${tipAttr}
+      data-aid="${escapeHtml(e.aId)}" data-bid="${escapeHtml(e.bId)}"
+      x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
+      x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
+      stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
+  })
+  .join("");
 
   const nodeGroups = nodes
     .map(
