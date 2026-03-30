@@ -24,7 +24,7 @@ export const HOME_GDP_PIE = {
 export const RELATIONSHIP_STYLES = {
   ally:     { label: "Ally",     color: "#2563eb" },
   friendly: { label: "Friendly", color: "#22c55e" },
-  neutral:  { label: "Neutral",  color: "#374151" },
+  neutral:  { label: "Neutral",  color: "#828282" },
   tense:    { label: "Tense",    color: "#facc15" },
   hostile:  { label: "Hostile",  color: "#f97316" },
   war:      { label: "War",      color: "#ef4444" },
