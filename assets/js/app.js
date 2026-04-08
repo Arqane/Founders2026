@@ -71,6 +71,10 @@ function ordinal(n) {
   }
 }
 
+/* =========================================================
+   Modal (used by pies)
+========================================================= */
+
 function ensureOneModalExists() {
   if (document.getElementById("pieModalOverlay")) return;
 
@@ -209,7 +213,6 @@ async function fetchPlanetResources(planetId) {
   return fetchJson(`${API_BASE}?view=resources&planet=${encodeURIComponent(planetId)}&nocache=1`);
 }
 
-// NEW
 async function fetchPlanetTrends(planetId) {
   return fetchJson(`${API_BASE}?view=trends&planet=${encodeURIComponent(planetId)}&nocache=1`);
 }
@@ -1145,7 +1148,7 @@ async function renderHomeGdpPies() {
 }
 
 /* =========================================================
-   Trends (SVG line charts) — NEW
+   Trends (SVG line charts)
 ========================================================= */
 
 function trendColorForIndex(i, n) {
@@ -1275,8 +1278,8 @@ function buildTrendSvg({
   const yLabels = gridLines
     .map((g) => {
       return `
-        <text x="${(padL - 10)}" y="${g.y.toFixed(2)}" text-anchor="end" dominant-baseline="middle"
-              font-size="12" fill="rgba(255,255,255,0.8)">
+        <text x="${padL - 10}" y="${g.y.toFixed(2)}" text-anchor="end" dominant-baseline="middle"
+              font-size="12" fill="rgba(0,0,0,0.55)">
           ${escapeHtml(fmtNum(g.val, 1))}
         </text>`;
     })
@@ -1286,27 +1289,27 @@ function buildTrendSvg({
     .map(
       (g) =>
         `<line x1="${x0}" y1="${g.y.toFixed(2)}" x2="${x1}" y2="${g.y.toFixed(2)}"
-               stroke="rgba(255,255,255,0.08)" stroke-width="1" />`
+               stroke="rgba(0,0,0,0.08)" stroke-width="1" />`
     )
     .join("");
 
   const xAxis = `
-    <line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="rgba(255,255,255,0.18)" stroke-width="1" />
-    <line x1="${x0}" y1="${y0}" x2="${x0}" y2="${y1}" stroke="rgba(255,255,255,0.18)" stroke-width="1" />
+    <line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="rgba(0,0,0,0.18)" stroke-width="1" />
+    <line x1="${x0}" y1="${y0}" x2="${x0}" y2="${y1}" stroke="rgba(0,0,0,0.18)" stroke-width="1" />
   `;
 
   const xTickHtml = xTicks
     .map((t) => {
       return `
-        <line x1="${t.x.toFixed(2)}" y1="${y0}" x2="${t.x.toFixed(2)}" y2="${(y0 + 6)}"
-              stroke="rgba(255,255,255,0.18)" stroke-width="1" />
-        <text x="${t.x.toFixed(2)}" y="${(y0 + 22)}" text-anchor="middle"
-              font-size="12" fill="rgba(255,255,255,0.8)">${escapeHtml(t.label)}</text>
+        <line x1="${t.x.toFixed(2)}" y1="${y0}" x2="${t.x.toFixed(2)}" y2="${y0 + 6}"
+              stroke="rgba(0,0,0,0.18)" stroke-width="1" />
+        <text x="${t.x.toFixed(2)}" y="${y0 + 22}" text-anchor="middle"
+              font-size="12" fill="rgba(0,0,0,0.65)">${escapeHtml(t.label)}</text>
       `;
     })
     .join("");
 
-  // Legend: clickable country names (wrap into multiple rows)
+  // Legend: now a vertical list (left side). Text is BLACK.
   const legendItems = countries
     .map((c, i) => {
       const color = trendColorForIndex(i, countries.length);
@@ -1319,12 +1322,13 @@ function buildTrendSvg({
                 data-country="${escapeHtml(c)}"
                 data-ind="${escapeHtml(indicatorKey)}"
                 type="button"
-                style="display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px;
-                       border:1px solid rgba(255,255,255,0.14);
-                       background:rgba(0,0,0,0.18); color:rgba(255,255,255,0.92);
-                       cursor:pointer; font-size:12px;">
-          <span style="display:inline-block; width:10px; height:10px; border-radius:3px; background:${swatch};"></span>
-          ${escapeHtml(c)}
+                style="display:flex; align-items:center; gap:8px; width:100%;
+                       padding:8px 10px; border-radius:10px;
+                       border:1px solid #e5e7eb;
+                       background:#fff; color:#111;
+                       cursor:pointer; font-size:12px; text-align:left;">
+          <span style="display:inline-block; width:10px; height:10px; border-radius:3px; background:${swatch}; flex:0 0 auto;"></span>
+          <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(c)}</span>
         </button>
       `;
     })
@@ -1334,24 +1338,31 @@ function buildTrendSvg({
     <div class="card" style="box-shadow:none; border:1px solid #eee;">
       <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
         <h4 style="margin:0 0 10px 0;">${escapeHtml(title)}</h4>
-        <div class="small">Click a line (or a country in the legend) to highlight. Click again to reset.</div>
+        <div class="small">Click a line (or a country in the list) to highlight. Click again to reset.</div>
       </div>
 
-      <div style="overflow:auto;">
-        <svg class="trendSvg" data-ind="${escapeHtml(indicatorKey)}"
-             width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
-             style="display:block; max-width:100%; height:auto;">
-          ${grid}
-          ${xAxis}
-          ${yLabels}
-          ${xTickHtml}
-          ${paths.join("")}
-        </svg>
-      </div>
+      <div style="display:flex; gap:12px; align-items:stretch;">
+        <!-- LEFT: country buttons -->
+        <div class="trendLegend"
+             style="width:220px; max-width:220px; border:1px solid #eee; border-radius:12px;
+                    padding:8px; background:#fafafa; overflow:auto; max-height:${H}px;">
+          <div class="small" style="margin-bottom:8px;"><strong>Countries</strong></div>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            ${legendItems}
+          </div>
+        </div>
 
-      <div class="small" style="margin-top:10px;">
-        <div class="trendLegend" style="display:flex; flex-wrap:wrap; gap:8px;">
-          ${legendItems}
+        <!-- RIGHT: chart -->
+        <div style="flex:1; overflow:auto;">
+          <svg class="trendSvg" data-ind="${escapeHtml(indicatorKey)}"
+               width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
+               style="display:block; max-width:100%; height:auto; background:#fff; border:1px solid #eee; border-radius:12px;">
+            ${grid}
+            ${xAxis}
+            ${yLabels}
+            ${xTickHtml}
+            ${paths.join("")}
+          </svg>
         </div>
       </div>
     </div>
@@ -1361,12 +1372,14 @@ function buildTrendSvg({
 function viewTrends(planet, trendsPayload) {
   const years = Array.isArray(trendsPayload?.years) ? trendsPayload.years : [];
   const countries = Array.isArray(trendsPayload?.countries) ? trendsPayload.countries : [];
-  const indicators = Array.isArray(trendsPayload?.indicators) ? trendsPayload.indicators : [];
 
-  const yLabel =
-    years.length ? `Year 1 → Year ${years[years.length - 1]}` : "Year 1 → Current Year";
+  // Remove Population graph
+  const allIndicators = Array.isArray(trendsPayload?.indicators) ? trendsPayload.indicators : [];
+  const indicators = allIndicators.filter((ind) => String(ind?.key || "").trim() !== "population");
 
-  // We'll keep focus state in DOM via dataset on app container
+  const yLabel = years.length ? `Year 1 → Year ${years[years.length - 1]}` : "Year 1 → Current Year";
+
+  // Keep focus state in DOM via dataset on app container
   const focused = app?.dataset?.trendFocus || "";
 
   const charts = indicators
@@ -1396,8 +1409,8 @@ function viewTrends(planet, trendsPayload) {
       <div class="small" style="margin-top:8px;">
         Highlighted country: <strong id="trendFocusName">${escapeHtml(focused || "None")}</strong>
         <button id="trendClearBtn" type="button"
-                style="margin-left:10px; padding:6px 10px; border-radius:10px; border:1px solid #374151;
-                       background:#111827; color:#e5e7eb; cursor:pointer;">
+                style="margin-left:10px; padding:6px 10px; border-radius:10px; border:1px solid #ddd;
+                       background:#fff; color:#111; cursor:pointer;">
           Clear
         </button>
       </div>
@@ -1405,7 +1418,6 @@ function viewTrends(planet, trendsPayload) {
 
     <section class="card">
       <h3 class="sectionTitle">All indicators</h3>
-      <div class="small">Tip: if you have a ton of countries, use the legend buttons instead of hunting thin lines.</div>
       <div style="display:grid; gap:14px; margin-top:12px;">
         ${charts || `<div class="small">No indicators found.</div>`}
       </div>
@@ -2122,7 +2134,6 @@ async function render() {
     return;
   }
 
-  // NEW: trends route
   if (path === "/trends") {
     const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
     setNav(planet, "trends");
@@ -2132,7 +2143,6 @@ async function render() {
       const trendsPayload = await fetchPlanetTrends(planet.id);
       if (!trendsPayload?.ok) throw new Error(trendsPayload?.error || "Trends ok=false");
 
-      // Persist focus across navigation within this session
       if (!app.dataset.trendFocus) app.dataset.trendFocus = "";
 
       app.innerHTML = viewTrends(planet, trendsPayload);
