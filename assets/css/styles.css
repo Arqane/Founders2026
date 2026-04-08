@@ -489,3 +489,25 @@ a.inline:hover { text-decoration:underline; }
   font-weight: 700;
   line-height: 1.35;
 }
+
+/* =========================================================
+   Trends (line charts)
+   Put this near the bottom of styles.css so it wins.
+========================================================= */
+
+.trendSvg {
+  background: radial-gradient(circle at 50% 40%, #1a1a1a, #0b0b0b);
+  border: 1px solid #eee;
+  border-radius: 12px;
+}
+
+/* Your global .dim is 0.10 !important; that's perfect for diplomacy,
+   but too strong for line charts. Override it ONLY inside trend SVGs. */
+.trendSvg .dim { opacity: 0.30 !important; }
+
+/* Give the focused line a little extra pop */
+.trendSvg .trendLine.focused { opacity: 1 !important; filter: drop-shadow(0 0 2px rgba(255,255,255,0.25)); }
+
+/* Legend chips */
+.trendLegendItem.dim { opacity: 0.55 !important; }
+.trendLegendItem.focused { outline: 2px solid rgba(17,17,17,0.25); background: #fff !important; color: #111 !important; }
