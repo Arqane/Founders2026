@@ -159,6 +159,10 @@ function setNav(planet = null, active = "overview") {
          style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "resources")}">
         Resources
       </a>
+      <a class="navTab" href="#/trends?planet=${encodeURIComponent(planet.id)}"
+         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "trends")}">
+        Trends
+      </a>
       <a class="navTab" href="#/countries?planet=${encodeURIComponent(planet.id)}"
          style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "countries")}">
         Countries
@@ -203,6 +207,11 @@ async function fetchPlanetTrade(planetId) {
 
 async function fetchPlanetResources(planetId) {
   return fetchJson(`${API_BASE}?view=resources&planet=${encodeURIComponent(planetId)}&nocache=1`);
+}
+
+// NEW
+async function fetchPlanetTrends(planetId) {
+  return fetchJson(`${API_BASE}?view=trends&planet=${encodeURIComponent(planetId)}&nocache=1`);
 }
 
 /* =========================================================
@@ -646,30 +655,30 @@ function diplomacyWebSvgFromEdges(countries, edges) {
 
   const nodeMap = new Map(nodes.map((nn) => [nn.id, nn]));
 
-const edgeLines = (edges || [])
-  .filter((e) => {
-    const relText = String(e?.relationship || "").trim().toLowerCase();
-    const keyText = String(e?.key || "").trim().toLowerCase();
-    return relText !== "none" && keyText !== "none";
-  })
-  .map((e) => {
-    const A = nodeMap.get(e.aId);
-    const B = nodeMap.get(e.bId);
-    if (!A || !B) return "";
+  const edgeLines = (edges || [])
+    .filter((e) => {
+      const relText = String(e?.relationship || "").trim().toLowerCase();
+      const keyText = String(e?.key || "").trim().toLowerCase();
+      return relText !== "none" && keyText !== "none";
+    })
+    .map((e) => {
+      const A = nodeMap.get(e.aId);
+      const B = nodeMap.get(e.bId);
+      if (!A || !B) return "";
 
-    const keyText = String(e?.key || "").trim().toLowerCase();
-    const style = RELATIONSHIP_STYLES[keyText] || RELATIONSHIP_STYLES.neutral;
+      const keyText = String(e?.key || "").trim().toLowerCase();
+      const style = RELATIONSHIP_STYLES[keyText] || RELATIONSHIP_STYLES.neutral;
 
-    const tip = edgeTooltipText(e);
-    const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
+      const tip = edgeTooltipText(e);
+      const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
 
-    return `<line class="dipEdge" ${tipAttr}
+      return `<line class="dipEdge" ${tipAttr}
       data-aid="${escapeHtml(e.aId)}" data-bid="${escapeHtml(e.bId)}"
       x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
       x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
       stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
-  })
-  .join("");
+    })
+    .join("");
 
   const nodeGroups = nodes
     .map(
@@ -1133,6 +1142,315 @@ async function renderHomeGdpPies() {
       </div>
     `;
   }
+}
+
+/* =========================================================
+   Trends (SVG line charts) — NEW
+========================================================= */
+
+function trendColorForIndex(i, n) {
+  // Keep it consistent with pie palette for now.
+  return pieColorForIndex(i, n);
+}
+
+function computeMinMaxFromSeriesMap(seriesMap, countries, yearsCount) {
+  let min = Infinity;
+  let max = -Infinity;
+
+  for (const c of countries) {
+    const arr = seriesMap?.[c] || [];
+    for (let i = 0; i < yearsCount; i++) {
+      const v = Number(arr[i]);
+      if (!Number.isFinite(v)) continue;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+  }
+
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return { min: 0, max: 1, hasData: false };
+  if (min === max) return { min: min - 1, max: max + 1, hasData: true };
+  return { min, max, hasData: true };
+}
+
+function buildTrendSvg({
+  indicatorKey,
+  title,
+  years,
+  countries,
+  seriesMap,
+  focusedCountry,
+  width = 940,
+  height = 360,
+}) {
+  const padL = 54;
+  const padR = 16;
+  const padT = 18;
+  const padB = 42;
+
+  const W = width;
+  const H = height;
+
+  const yearsCount = Array.isArray(years) ? years.length : 0;
+  if (yearsCount < 2) {
+    return `<div class="small">Not enough years to chart.</div>`;
+  }
+
+  const { min, max, hasData } = computeMinMaxFromSeriesMap(seriesMap, countries, yearsCount);
+  if (!hasData) {
+    return `<div class="small">No data yet for this indicator.</div>`;
+  }
+
+  const x0 = padL;
+  const x1 = W - padR;
+  const y0 = H - padB;
+  const y1 = padT;
+
+  const xForIdx = (i) => x0 + (i * (x1 - x0)) / (yearsCount - 1);
+  const yForVal = (v) => {
+    const t = (v - min) / (max - min);
+    return y0 - t * (y0 - y1);
+  };
+
+  // gridlines: 4 horizontal
+  const gridLines = [];
+  for (let g = 0; g <= 4; g++) {
+    const t = g / 4;
+    const y = y0 - t * (y0 - y1);
+    const val = min + t * (max - min);
+    gridLines.push({ y, val });
+  }
+
+  const xTicks = years.map((y, i) => ({ label: `Y${y}`, x: xForIdx(i) }));
+
+  const paths = countries.map((c, i) => {
+    const arr = seriesMap?.[c] || [];
+    const pts = [];
+    for (let k = 0; k < yearsCount; k++) {
+      const v = Number(arr[k]);
+      if (!Number.isFinite(v)) {
+        pts.push(null);
+      } else {
+        pts.push({ x: xForIdx(k), y: yForVal(v) });
+      }
+    }
+
+    // Convert to SVG path with breaks on nulls
+    let d = "";
+    let started = false;
+    pts.forEach((p) => {
+      if (!p) {
+        started = false;
+        return;
+      }
+      if (!started) {
+        d += `M ${p.x.toFixed(2)} ${p.y.toFixed(2)} `;
+        started = true;
+      } else {
+        d += `L ${p.x.toFixed(2)} ${p.y.toFixed(2)} `;
+      }
+    });
+
+    const color = trendColorForIndex(i, countries.length);
+
+    const isFocused = focusedCountry && normalizeId(c) === normalizeId(focusedCountry);
+    const isDim = focusedCountry && !isFocused;
+
+    const stroke = isDim ? "rgba(120,120,120,0.25)" : color;
+    const sw = isFocused ? 4 : 2.5;
+    const op = isDim ? 0.35 : 0.9;
+
+    return `
+      <path class="trendLine ${isDim ? "dim" : ""} ${isFocused ? "focused" : ""}"
+            data-country="${escapeHtml(c)}"
+            data-ind="${escapeHtml(indicatorKey)}"
+            d="${d.trim()}"
+            fill="none"
+            stroke="${stroke}"
+            stroke-width="${sw}"
+            opacity="${op}"
+            style="cursor:pointer;"
+      />`;
+  });
+
+  const yLabels = gridLines
+    .map((g) => {
+      return `
+        <text x="${(padL - 10)}" y="${g.y.toFixed(2)}" text-anchor="end" dominant-baseline="middle"
+              font-size="12" fill="rgba(255,255,255,0.8)">
+          ${escapeHtml(fmtNum(g.val, 1))}
+        </text>`;
+    })
+    .join("");
+
+  const grid = gridLines
+    .map(
+      (g) =>
+        `<line x1="${x0}" y1="${g.y.toFixed(2)}" x2="${x1}" y2="${g.y.toFixed(2)}"
+               stroke="rgba(255,255,255,0.08)" stroke-width="1" />`
+    )
+    .join("");
+
+  const xAxis = `
+    <line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="rgba(255,255,255,0.18)" stroke-width="1" />
+    <line x1="${x0}" y1="${y0}" x2="${x0}" y2="${y1}" stroke="rgba(255,255,255,0.18)" stroke-width="1" />
+  `;
+
+  const xTickHtml = xTicks
+    .map((t) => {
+      return `
+        <line x1="${t.x.toFixed(2)}" y1="${y0}" x2="${t.x.toFixed(2)}" y2="${(y0 + 6)}"
+              stroke="rgba(255,255,255,0.18)" stroke-width="1" />
+        <text x="${t.x.toFixed(2)}" y="${(y0 + 22)}" text-anchor="middle"
+              font-size="12" fill="rgba(255,255,255,0.8)">${escapeHtml(t.label)}</text>
+      `;
+    })
+    .join("");
+
+  // Legend: clickable country names (wrap into multiple rows)
+  const legendItems = countries
+    .map((c, i) => {
+      const color = trendColorForIndex(i, countries.length);
+      const isFocused = focusedCountry && normalizeId(c) === normalizeId(focusedCountry);
+      const isDim = focusedCountry && !isFocused;
+      const swatch = isDim ? "rgba(120,120,120,0.25)" : color;
+
+      return `
+        <button class="trendLegendItem ${isDim ? "dim" : ""} ${isFocused ? "focused" : ""}"
+                data-country="${escapeHtml(c)}"
+                data-ind="${escapeHtml(indicatorKey)}"
+                type="button"
+                style="display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px;
+                       border:1px solid rgba(255,255,255,0.14);
+                       background:rgba(0,0,0,0.18); color:rgba(255,255,255,0.92);
+                       cursor:pointer; font-size:12px;">
+          <span style="display:inline-block; width:10px; height:10px; border-radius:3px; background:${swatch};"></span>
+          ${escapeHtml(c)}
+        </button>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="card" style="box-shadow:none; border:1px solid #eee;">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
+        <h4 style="margin:0 0 10px 0;">${escapeHtml(title)}</h4>
+        <div class="small">Click a line (or a country in the legend) to highlight. Click again to reset.</div>
+      </div>
+
+      <div style="overflow:auto;">
+        <svg class="trendSvg" data-ind="${escapeHtml(indicatorKey)}"
+             width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
+             style="display:block; max-width:100%; height:auto;">
+          ${grid}
+          ${xAxis}
+          ${yLabels}
+          ${xTickHtml}
+          ${paths.join("")}
+        </svg>
+      </div>
+
+      <div class="small" style="margin-top:10px;">
+        <div class="trendLegend" style="display:flex; flex-wrap:wrap; gap:8px;">
+          ${legendItems}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function viewTrends(planet, trendsPayload) {
+  const years = Array.isArray(trendsPayload?.years) ? trendsPayload.years : [];
+  const countries = Array.isArray(trendsPayload?.countries) ? trendsPayload.countries : [];
+  const indicators = Array.isArray(trendsPayload?.indicators) ? trendsPayload.indicators : [];
+
+  const yLabel =
+    years.length ? `Year 1 → Year ${years[years.length - 1]}` : "Year 1 → Current Year";
+
+  // We'll keep focus state in DOM via dataset on app container
+  const focused = app?.dataset?.trendFocus || "";
+
+  const charts = indicators
+    .map((ind) => {
+      const key = String(ind?.key || "").trim();
+      const label = String(ind?.label || key || "Indicator").trim();
+      const series = ind?.series || {};
+      return buildTrendSvg({
+        indicatorKey: key,
+        title: label,
+        years,
+        countries,
+        seriesMap: series,
+        focusedCountry: focused || "",
+      });
+    })
+    .join("");
+
+  return `
+    ${planetHeader(planet, trendsPayload)}
+
+    <section class="card">
+      <h3 class="sectionTitle">Trends</h3>
+      <div class="small">
+        ${escapeHtml(yLabel)} • One chart per indicator • Click to highlight a country across all charts.
+      </div>
+      <div class="small" style="margin-top:8px;">
+        Highlighted country: <strong id="trendFocusName">${escapeHtml(focused || "None")}</strong>
+        <button id="trendClearBtn" type="button"
+                style="margin-left:10px; padding:6px 10px; border-radius:10px; border:1px solid #374151;
+                       background:#111827; color:#e5e7eb; cursor:pointer;">
+          Clear
+        </button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">All indicators</h3>
+      <div class="small">Tip: if you have a ton of countries, use the legend buttons instead of hunting thin lines.</div>
+      <div style="display:grid; gap:14px; margin-top:12px;">
+        ${charts || `<div class="small">No indicators found.</div>`}
+      </div>
+    </section>
+  `;
+}
+
+function attachTrendHandlers(trendsPayload, planet) {
+  // Central focus state stored on app dataset so re-render is easy
+  if (!app) return;
+
+  function setFocus(countryNameOrBlank) {
+    app.dataset.trendFocus = countryNameOrBlank ? String(countryNameOrBlank) : "";
+    // Re-render the trends view with the same payload (no refetch)
+    app.innerHTML = viewTrends(planet, trendsPayload);
+    attachTrendHandlers(trendsPayload, planet);
+  }
+
+  // Clear button
+  const clearBtn = document.getElementById("trendClearBtn");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => setFocus(""));
+  }
+
+  // Click on line path
+  document.querySelectorAll(".trendLine[data-country]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      const c = el.getAttribute("data-country") || "";
+      const now = normalizeId(app.dataset.trendFocus || "");
+      const next = now && normalizeId(c) === now ? "" : c;
+      setFocus(next);
+    });
+  });
+
+  // Click on legend pill
+  document.querySelectorAll(".trendLegendItem[data-country]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const c = btn.getAttribute("data-country") || "";
+      const now = normalizeId(app.dataset.trendFocus || "");
+      const next = now && normalizeId(c) === now ? "" : c;
+      setFocus(next);
+    });
+  });
 }
 
 /* =========================================================
@@ -1797,6 +2115,28 @@ async function render() {
 
       app.innerHTML = viewResources(planet, resPayload);
       attachResourcesHandlers(resPayload);
+    } catch (err) {
+      console.error(err);
+      app.innerHTML = viewError(err);
+    }
+    return;
+  }
+
+  // NEW: trends route
+  if (path === "/trends") {
+    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
+    setNav(planet, "trends");
+    app.innerHTML = viewLoading(`Loading Trends • ${planet.label}`);
+
+    try {
+      const trendsPayload = await fetchPlanetTrends(planet.id);
+      if (!trendsPayload?.ok) throw new Error(trendsPayload?.error || "Trends ok=false");
+
+      // Persist focus across navigation within this session
+      if (!app.dataset.trendFocus) app.dataset.trendFocus = "";
+
+      app.innerHTML = viewTrends(planet, trendsPayload);
+      attachTrendHandlers(trendsPayload, planet);
     } catch (err) {
       console.error(err);
       app.innerHTML = viewError(err);
