@@ -141,6 +141,7 @@ function tabStyle(isActive) {
     : "background:#111827;color:#e5e7eb;border:1px solid #374151;";
 }
 
+// Tabs order requested: Overview, Trends, Trade, Resources, Countries
 function setNav(planet = null, active = "overview") {
   const left = `
     <a class="siteTitle" href="#/" style="font-weight:800; letter-spacing:0.2px; text-decoration:none;">
@@ -155,18 +156,22 @@ function setNav(planet = null, active = "overview") {
          style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "overview")}">
         Overview
       </a>
-      <a class="navTab" href="#/trade?planet=${encodeURIComponent(planet.id)}"
-         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "trade")}">
-        Trade
-      </a>
-      <a class="navTab" href="#/resources?planet=${encodeURIComponent(planet.id)}"
-         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "resources")}">
-        Resources
-      </a>
+
       <a class="navTab" href="#/trends?planet=${encodeURIComponent(planet.id)}"
          style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "trends")}">
         Trends
       </a>
+
+      <a class="navTab" href="#/trade?planet=${encodeURIComponent(planet.id)}"
+         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "trade")}">
+        Trade
+      </a>
+
+      <a class="navTab" href="#/resources?planet=${encodeURIComponent(planet.id)}"
+         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "resources")}">
+        Resources
+      </a>
+
       <a class="navTab" href="#/countries?planet=${encodeURIComponent(planet.id)}"
          style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "countries")}">
         Countries
@@ -322,9 +327,7 @@ function getTradeRank(tradePayload, country, key, dir = "desc", useAbs = false) 
       };
     })
     .filter(Boolean)
-    .sort((a, b) => {
-      return dir === "asc" ? a.sortValue - b.sortValue : b.sortValue - a.sortValue;
-    });
+    .sort((a, b) => (dir === "asc" ? a.sortValue - b.sortValue : b.sortValue - a.sortValue));
 
   const idx = ranked.findIndex(
     (x) =>
@@ -349,10 +352,7 @@ function getCountryResourcesFromPayload(resourcesPayload, country) {
 
     const value = Number(hit?.value);
     if (Number.isFinite(value) && value > 0) {
-      resources.push({
-        name: resourceName,
-        quantity: value,
-      });
+      resources.push({ name: resourceName, quantity: value });
     }
   });
 
@@ -376,95 +376,23 @@ function buildCountryStatRows(country, overviewPayload, tradePayload) {
   const exportValue = Number(tradeItem?.exportValue);
   const importValue = Number(tradeItem?.importValue);
   const tradeBalance =
-    Number.isFinite(exportValue) && Number.isFinite(importValue)
-      ? exportValue - importValue
-      : null;
+    Number.isFinite(exportValue) && Number.isFinite(importValue) ? exportValue - importValue : null;
 
   const rows = [
-    {
-      label: "Real GDP",
-      valueText: fmtUsdB(indicators.rGDP),
-      rank: getCountryRank(overviewPayload?.rankings?.rGDP, country),
-      rankBase: overviewCountryCount,
-    },
-    {
-      label: "Real GDP per Capita",
-      valueText: fmtUsd(indicators.rGDPpc, 0),
-      rank: getCountryRank(overviewPayload?.rankings?.rGDPpc, country),
-      rankBase: overviewCountryCount,
-    },
-    {
-      label: "Real GDP Growth Rate",
-      valueText: fmtPct(indicators.rGDPGrowth),
-      rank: getCountryRank(overviewPayload?.rankings?.rGDPGrowth, country),
-      rankBase: overviewCountryCount,
-    },
-    {
-      label: "Unemployment Rate",
-      valueText: fmtPct(indicators.unemployment),
-      rank: getCountryRank(overviewPayload?.rankings?.unemployment, country),
-      rankBase: overviewCountryCount,
-    },
-    {
-      label: "Inflation Rate",
-      valueText: fmtPct(indicators.inflation),
-      rank: getCountryRank(overviewPayload?.rankings?.inflation, country),
-      rankBase: overviewCountryCount,
-    },
-    {
-      label: "Budget Deficit/Surplus",
-      valueText: fmtUsdB(indicators.budgetDeficit),
-      rank: getCountryRank(overviewPayload?.rankings?.budgetDeficit, country),
-      rankBase: overviewCountryCount,
-    },
-    {
-      label: "National Debt/Fund",
-      valueText: fmtUsdB(indicators.nationalDebt),
-      rank: getCountryRank(overviewPayload?.rankings?.nationalDebt, country),
-      rankBase: overviewCountryCount,
-    },
-    {
-      label: "Federal Funds Rate",
-      valueText: fmtPct(indicators.fedFundsRate),
-      rank: getCountryRank(overviewPayload?.rankings?.fedFundsRate, country),
-      rankBase: overviewCountryCount,
-    },
-    {
-      label: "Population",
-      valueText: fmtNum(indicators.population, 0),
-      rank: getCountryRank(overviewPayload?.rankings?.population, country),
-      rankBase: overviewCountryCount,
-    },
-    {
-      label: "Trade Frequency",
-      valueText: fmtNum(tradeItem?.frequency, 0),
-      rank: getTradeRank(tradePayload, country, "frequency", "desc", false),
-      rankBase: tradeCountryCount,
-    },
-    {
-      label: "Trade Volume",
-      valueText: fmtNum(tradeItem?.volume, 0),
-      rank: getTradeRank(tradePayload, country, "volume", "desc", false),
-      rankBase: tradeCountryCount,
-    },
-    {
-      label: "Exports",
-      valueText: fmtUsdB(tradeItem?.exportValue),
-      rank: getTradeRank(tradePayload, country, "exportValue", "desc", false),
-      rankBase: tradeCountryCount,
-    },
-    {
-      label: "Imports",
-      valueText: fmtUsdB(tradeItem?.importValue),
-      rank: getTradeRank(tradePayload, country, "importValue", "desc", true),
-      rankBase: tradeCountryCount,
-    },
-    {
-      label: "Trade Balance",
-      valueText: fmtUsdB(tradeBalance),
-      rank: null,
-      rankBase: null,
-    },
+    { label: "Real GDP", valueText: fmtUsdB(indicators.rGDP), rank: getCountryRank(overviewPayload?.rankings?.rGDP, country), rankBase: overviewCountryCount },
+    { label: "Real GDP per Capita", valueText: fmtUsd(indicators.rGDPpc, 0), rank: getCountryRank(overviewPayload?.rankings?.rGDPpc, country), rankBase: overviewCountryCount },
+    { label: "Real GDP Growth Rate", valueText: fmtPct(indicators.rGDPGrowth), rank: getCountryRank(overviewPayload?.rankings?.rGDPGrowth, country), rankBase: overviewCountryCount },
+    { label: "Unemployment Rate", valueText: fmtPct(indicators.unemployment), rank: getCountryRank(overviewPayload?.rankings?.unemployment, country), rankBase: overviewCountryCount },
+    { label: "Inflation Rate", valueText: fmtPct(indicators.inflation), rank: getCountryRank(overviewPayload?.rankings?.inflation, country), rankBase: overviewCountryCount },
+    { label: "Budget Deficit/Surplus", valueText: fmtUsdB(indicators.budgetDeficit), rank: getCountryRank(overviewPayload?.rankings?.budgetDeficit, country), rankBase: overviewCountryCount },
+    { label: "National Debt/Fund", valueText: fmtUsdB(indicators.nationalDebt), rank: getCountryRank(overviewPayload?.rankings?.nationalDebt, country), rankBase: overviewCountryCount },
+    { label: "Federal Funds Rate", valueText: fmtPct(indicators.fedFundsRate), rank: getCountryRank(overviewPayload?.rankings?.fedFundsRate, country), rankBase: overviewCountryCount },
+    { label: "Population", valueText: fmtNum(indicators.population, 0), rank: getCountryRank(overviewPayload?.rankings?.population, country), rankBase: overviewCountryCount },
+    { label: "Trade Frequency", valueText: fmtNum(tradeItem?.frequency, 0), rank: getTradeRank(tradePayload, country, "frequency", "desc", false), rankBase: tradeCountryCount },
+    { label: "Trade Volume", valueText: fmtNum(tradeItem?.volume, 0), rank: getTradeRank(tradePayload, country, "volume", "desc", false), rankBase: tradeCountryCount },
+    { label: "Exports", valueText: fmtUsdB(tradeItem?.exportValue), rank: getTradeRank(tradePayload, country, "exportValue", "desc", false), rankBase: tradeCountryCount },
+    { label: "Imports", valueText: fmtUsdB(tradeItem?.importValue), rank: getTradeRank(tradePayload, country, "importValue", "desc", true), rankBase: tradeCountryCount },
+    { label: "Trade Balance", valueText: fmtUsdB(tradeBalance), rank: null, rankBase: null },
   ];
 
   return rows.map((row) => ({
@@ -935,13 +863,7 @@ function buildTradePieData(items, key, formatter, useAbsForSize = false, useAbsF
 }
 
 function pieCardHtml({ cardKey, title, subtitle, data, total, size }) {
-  const pie = pieSvgHtml({
-    data,
-    total,
-    size,
-    ariaLabel: title,
-  });
-
+  const pie = pieSvgHtml({ data, total, size, ariaLabel: title });
   const legend = legendTableHtml(data);
 
   return `
@@ -1049,9 +971,7 @@ async function renderHomeGdpPies() {
               <div class="homePlanetSubtitle">Error</div>
             </div>
             <div class="small">Couldn’t load GDP.</div>
-            <div class="small" style="margin-top:8px;"><strong>Error:</strong> ${escapeHtml(
-              pl?.error || "Unknown error"
-            )}</div>
+            <div class="small" style="margin-top:8px;"><strong>Error:</strong> ${escapeHtml(pl?.error || "Unknown error")}</div>
           </div>
         `;
       }
@@ -1062,12 +982,7 @@ async function renderHomeGdpPies() {
       const key = `home:gdp:${planet.id}`;
       modalCache.set(key, { planetLabel, yearLabel: yLabel, total, data });
 
-      const pieSmall = pieSvgHtml({
-        data,
-        total,
-        size: "small",
-        ariaLabel: `${planetLabel} GDP`,
-      });
+      const pieSmall = pieSvgHtml({ data, total, size: "small", ariaLabel: `${planetLabel} GDP` });
 
       return `
         <div class="homePlanetCard" data-chartkey="${escapeHtml(key)}" style="cursor:pointer;">
@@ -1152,7 +1067,6 @@ async function renderHomeGdpPies() {
 ========================================================= */
 
 function trendColorForIndex(i, n) {
-  // Keep it consistent with pie palette for now.
   return pieColorForIndex(i, n);
 }
 
@@ -1194,14 +1108,10 @@ function buildTrendSvg({
   const H = height;
 
   const yearsCount = Array.isArray(years) ? years.length : 0;
-  if (yearsCount < 2) {
-    return `<div class="small">Not enough years to chart.</div>`;
-  }
+  if (yearsCount < 2) return `<div class="small">Not enough years to chart.</div>`;
 
   const { min, max, hasData } = computeMinMaxFromSeriesMap(seriesMap, countries, yearsCount);
-  if (!hasData) {
-    return `<div class="small">No data yet for this indicator.</div>`;
-  }
+  if (!hasData) return `<div class="small">No data yet for this indicator.</div>`;
 
   const x0 = padL;
   const x1 = W - padR;
@@ -1230,14 +1140,10 @@ function buildTrendSvg({
     const pts = [];
     for (let k = 0; k < yearsCount; k++) {
       const v = Number(arr[k]);
-      if (!Number.isFinite(v)) {
-        pts.push(null);
-      } else {
-        pts.push({ x: xForIdx(k), y: yForVal(v) });
-      }
+      if (!Number.isFinite(v)) pts.push(null);
+      else pts.push({ x: xForIdx(k), y: yForVal(v) });
     }
 
-    // Convert to SVG path with breaks on nulls
     let d = "";
     let started = false;
     pts.forEach((p) => {
@@ -1275,11 +1181,12 @@ function buildTrendSvg({
       />`;
   });
 
+  // Dark chart: white-ish labels/grid
   const yLabels = gridLines
     .map((g) => {
       return `
         <text x="${padL - 10}" y="${g.y.toFixed(2)}" text-anchor="end" dominant-baseline="middle"
-              font-size="12" fill="rgba(0,0,0,0.55)">
+              font-size="12" fill="rgba(255,255,255,0.75)">
           ${escapeHtml(fmtNum(g.val, 1))}
         </text>`;
     })
@@ -1289,27 +1196,27 @@ function buildTrendSvg({
     .map(
       (g) =>
         `<line x1="${x0}" y1="${g.y.toFixed(2)}" x2="${x1}" y2="${g.y.toFixed(2)}"
-               stroke="rgba(0,0,0,0.08)" stroke-width="1" />`
+               stroke="rgba(255,255,255,0.10)" stroke-width="1" />`
     )
     .join("");
 
   const xAxis = `
-    <line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="rgba(0,0,0,0.18)" stroke-width="1" />
-    <line x1="${x0}" y1="${y0}" x2="${x0}" y2="${y1}" stroke="rgba(0,0,0,0.18)" stroke-width="1" />
+    <line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y0}" stroke="rgba(255,255,255,0.22)" stroke-width="1" />
+    <line x1="${x0}" y1="${y0}" x2="${x0}" y2="${y1}" stroke="rgba(255,255,255,0.22)" stroke-width="1" />
   `;
 
   const xTickHtml = xTicks
     .map((t) => {
       return `
         <line x1="${t.x.toFixed(2)}" y1="${y0}" x2="${t.x.toFixed(2)}" y2="${y0 + 6}"
-              stroke="rgba(0,0,0,0.18)" stroke-width="1" />
+              stroke="rgba(255,255,255,0.22)" stroke-width="1" />
         <text x="${t.x.toFixed(2)}" y="${y0 + 22}" text-anchor="middle"
-              font-size="12" fill="rgba(0,0,0,0.65)">${escapeHtml(t.label)}</text>
+              font-size="12" fill="rgba(255,255,255,0.80)">${escapeHtml(t.label)}</text>
       `;
     })
     .join("");
 
-  // Legend: now a vertical list (left side). Text is BLACK.
+  // Legend list (left side): keep black text; reduce font size back to the old feel
   const legendItems = countries
     .map((c, i) => {
       const color = trendColorForIndex(i, countries.length);
@@ -1323,7 +1230,7 @@ function buildTrendSvg({
                 data-ind="${escapeHtml(indicatorKey)}"
                 type="button"
                 style="display:flex; align-items:center; gap:8px; width:100%;
-                       padding:8px 10px; border-radius:10px;
+                       padding:6px 8px; border-radius:10px;
                        border:1px solid #e5e7eb;
                        background:#fff; color:#111;
                        cursor:pointer; font-size:12px; text-align:left;">
@@ -1352,11 +1259,13 @@ function buildTrendSvg({
           </div>
         </div>
 
-        <!-- RIGHT: chart -->
+        <!-- RIGHT: chart (BLACK background again) -->
         <div style="flex:1; overflow:auto;">
           <svg class="trendSvg" data-ind="${escapeHtml(indicatorKey)}"
                width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
-               style="display:block; max-width:100%; height:auto; background:#fff; border:1px solid #eee; border-radius:12px;">
+               style="display:block; max-width:100%; height:auto;
+                      background: radial-gradient(circle at 50% 40%, #1a1a1a, #0b0b0b);
+                      border:1px solid #eee; border-radius:12px;">
             ${grid}
             ${xAxis}
             ${yLabels}
@@ -1378,8 +1287,6 @@ function viewTrends(planet, trendsPayload) {
   const indicators = allIndicators.filter((ind) => String(ind?.key || "").trim() !== "population");
 
   const yLabel = years.length ? `Year 1 → Year ${years[years.length - 1]}` : "Year 1 → Current Year";
-
-  // Keep focus state in DOM via dataset on app container
   const focused = app?.dataset?.trendFocus || "";
 
   const charts = indicators
@@ -1426,23 +1333,17 @@ function viewTrends(planet, trendsPayload) {
 }
 
 function attachTrendHandlers(trendsPayload, planet) {
-  // Central focus state stored on app dataset so re-render is easy
   if (!app) return;
 
   function setFocus(countryNameOrBlank) {
     app.dataset.trendFocus = countryNameOrBlank ? String(countryNameOrBlank) : "";
-    // Re-render the trends view with the same payload (no refetch)
     app.innerHTML = viewTrends(planet, trendsPayload);
     attachTrendHandlers(trendsPayload, planet);
   }
 
-  // Clear button
   const clearBtn = document.getElementById("trendClearBtn");
-  if (clearBtn) {
-    clearBtn.addEventListener("click", () => setFocus(""));
-  }
+  if (clearBtn) clearBtn.addEventListener("click", () => setFocus(""));
 
-  // Click on line path
   document.querySelectorAll(".trendLine[data-country]").forEach((el) => {
     el.addEventListener("click", (e) => {
       e.preventDefault();
@@ -1453,7 +1354,6 @@ function attachTrendHandlers(trendsPayload, planet) {
     });
   });
 
-  // Click on legend pill
   document.querySelectorAll(".trendLegendItem[data-country]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
@@ -1466,7 +1366,108 @@ function attachTrendHandlers(trendsPayload, planet) {
 }
 
 /* =========================================================
-   Views
+   Resources (handlers)
+========================================================= */
+
+function attachResourcesHandlers(resPayload) {
+  const sel = document.getElementById("resSelect");
+  const totalsEl = document.getElementById("resTotals");
+  const pieEl = document.getElementById("resPie");
+  const legendEl = document.getElementById("resLegend");
+  if (!sel || !totalsEl || !pieEl || !legendEl) return;
+
+  const worldTotals = resPayload?.resources?.worldTotals || [];
+  const breakdownByResource = resPayload?.resources?.breakdownByResource || {};
+  const totalMap = new Map(worldTotals.map((x) => [x.resource, x.total]));
+
+  function render(resource) {
+    const total = totalMap.get(resource);
+    totalsEl.innerHTML = `World total: <strong>${fmtNum(total, 0)}</strong>`;
+
+    const breakdown = breakdownByResource[resource] || [];
+    const data = (breakdown || [])
+      .map((x) => ({ name: String(x.name || ""), value: Number(x.value) }))
+      .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0)
+      .sort((a, b) => b.value - a.value);
+
+    const totalRes = data.reduce((s, x) => s + x.value, 0);
+    if (!data.length || totalRes <= 0) {
+      pieEl.innerHTML = `<div class="small">No countries possess this resource (or all values are 0).</div>`;
+      legendEl.innerHTML = "";
+      return;
+    }
+
+    const W = 720;
+    const H = 480;
+    const cx = W / 2;
+    const cy = H / 2;
+    const r = 185;
+    let start = -Math.PI / 2;
+
+    const slices = data.map((d, i) => {
+      const ang = (d.value / totalRes) * Math.PI * 2;
+      const end = start + ang;
+
+      const x1 = cx + r * Math.cos(start);
+      const y1 = cy + r * Math.sin(start);
+      const x2 = cx + r * Math.cos(end);
+      const y2 = cy + r * Math.sin(end);
+      const large = ang > Math.PI ? 1 : 0;
+
+      const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+
+      const mid = (start + end) / 2;
+      const lx = cx + (r + 34) * Math.cos(mid);
+      const ly = cy + (r + 34) * Math.sin(mid);
+      const label = `${d.name}: ${fmtNum(d.value, 0)}`;
+
+      const color = pieColorForIndex(i, data.length);
+
+      start = end;
+      return { path, color, lx, ly, label };
+    });
+
+    pieEl.innerHTML = `
+      <div class="card" style="box-shadow:none; border:1px solid #eee;">
+        <h4 style="margin:0 0 10px 0; text-align:center;">${escapeHtml(resource)} holdings by country (labels show values)</h4>
+        <div style="display:flex; justify-content:center;">
+          <svg style="display:block; max-width:100%; height:auto;"
+               width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
+               role="img" aria-label="Resource pie chart">
+            ${slices.map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95"></path>`).join("")}
+            ${slices.map((s) => `<text x="${s.lx}" y="${s.ly}" font-size="12" text-anchor="middle">${escapeHtml(s.label)}</text>`).join("")}
+          </svg>
+        </div>
+      </div>
+    `;
+
+    const legendRows = data
+      .map((d, i) => {
+        const color = pieColorForIndex(i, data.length);
+        return `
+          <tr>
+            <td class="legendSwatchCell"><span class="legendSwatchBox" style="background:${color};"></span></td>
+            <td class="legendName">${escapeHtml(d.name)}</td>
+            <td class="legendVal">${escapeHtml(fmtNum(d.value, 0))}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    legendEl.innerHTML = `
+      <div class="legendCard">
+        <h4 class="legendTitle">Legend</h4>
+        <table class="legendTable"><tbody>${legendRows}</tbody></table>
+      </div>
+    `;
+  }
+
+  render(sel.value);
+  sel.addEventListener("change", () => render(sel.value));
+}
+
+/* =========================================================
+   Views (pages)
 ========================================================= */
 
 function viewChoosePlanetSkeleton() {
@@ -1553,60 +1554,15 @@ function viewPlanetOverview(planet, payload) {
       <p class="small">Click any table to expand/collapse full rankings (no page refresh).</p>
       <div class="grid2">
         ${expandableRankingsTable({ id: "overview:rgdp", title: "Real GDP", rows: r.rGDP, fmtFn: fmtUsdB })}
-        ${expandableRankingsTable({
-          id: "overview:rgdppc",
-          title: "Real GDP per Capita",
-          rows: r.rGDPpc,
-          fmtFn: (n) => fmtUsd(n, 0),
-        })}
-        ${expandableRankingsTable({
-          id: "overview:rgdpgrowth",
-          title: "Real GDP Growth Rate",
-          rows: r.rGDPGrowth,
-          fmtFn: fmtPct,
-        })}
-        ${expandableRankingsTable({
-          id: "overview:unemp",
-          title: "Unemployment Rate",
-          rows: r.unemployment,
-          fmtFn: fmtPct,
-        })}
-        ${expandableRankingsTable({
-          id: "overview:infl",
-          title: "Inflation Rate",
-          rows: r.inflation,
-          fmtFn: fmtPct,
-        })}
-        ${expandableRankingsTable({
-          id: "overview:budget",
-          title: "Budget Deficit/Surplus",
-          rows: r.budgetDeficit,
-          fmtFn: fmtUsdB,
-        })}
-        ${expandableRankingsTable({
-          id: "overview:debt",
-          title: "National Debt/Fund",
-          rows: r.nationalDebt,
-          fmtFn: fmtUsdB,
-        })}
-        ${expandableRankingsTable({
-          id: "overview:ffr",
-          title: "Federal Funds Rate",
-          rows: r.fedFundsRate,
-          fmtFn: fmtPct,
-        })}
-        ${expandableRankingsTable({
-          id: "overview:pop",
-          title: "Total Population",
-          rows: r.population,
-          fmtFn: (n) => fmtNum(n, 0),
-        })}
-        ${expandableRankingsTable({
-          id: "overview:system",
-          title: "Economic System",
-          rows: r.economicSystem,
-          fmtFn: (v) => escapeHtml(v),
-        })}
+        ${expandableRankingsTable({ id: "overview:rgdppc", title: "Real GDP per Capita", rows: r.rGDPpc, fmtFn: (n) => fmtUsd(n, 0) })}
+        ${expandableRankingsTable({ id: "overview:rgdpgrowth", title: "Real GDP Growth Rate", rows: r.rGDPGrowth, fmtFn: fmtPct })}
+        ${expandableRankingsTable({ id: "overview:unemp", title: "Unemployment Rate", rows: r.unemployment, fmtFn: fmtPct })}
+        ${expandableRankingsTable({ id: "overview:infl", title: "Inflation Rate", rows: r.inflation, fmtFn: fmtPct })}
+        ${expandableRankingsTable({ id: "overview:budget", title: "Budget Deficit/Surplus", rows: r.budgetDeficit, fmtFn: fmtUsdB })}
+        ${expandableRankingsTable({ id: "overview:debt", title: "National Debt/Fund", rows: r.nationalDebt, fmtFn: fmtUsdB })}
+        ${expandableRankingsTable({ id: "overview:ffr", title: "Federal Funds Rate", rows: r.fedFundsRate, fmtFn: fmtPct })}
+        ${expandableRankingsTable({ id: "overview:pop", title: "Total Population", rows: r.population, fmtFn: (n) => fmtNum(n, 0) })}
+        ${expandableRankingsTable({ id: "overview:system", title: "Economic System", rows: r.economicSystem, fmtFn: (v) => escapeHtml(v) })}
       </div>
     </section>
   `;
@@ -1632,38 +1588,10 @@ function viewTrade(planet, overviewPayload, tradePayload) {
     <section class="card">
       <h3 class="sectionTitle">${escapeHtml(yTitle)} Trade Charts</h3>
       <div class="grid2">
-        ${pieCardHtml({
-          cardKey: `${keyBase}:frequency`,
-          title: "Trade Frequency",
-          subtitle: "Hover slices for values",
-          data: freqPie.data,
-          total: freqPie.total,
-          size: "small",
-        })}
-        ${pieCardHtml({
-          cardKey: `${keyBase}:volume`,
-          title: "Trade Volume",
-          subtitle: "Hover slices for values",
-          data: volPie.data,
-          total: volPie.total,
-          size: "small",
-        })}
-        ${pieCardHtml({
-          cardKey: `${keyBase}:exports`,
-          title: "Export Value ($B)",
-          subtitle: "Hover slices for values",
-          data: expPie.data,
-          total: expPie.total,
-          size: "small",
-        })}
-        ${pieCardHtml({
-          cardKey: `${keyBase}:imports`,
-          title: "Import Value ($B)",
-          subtitle: "ABS used for ranking + slice sizes",
-          data: impPie.data,
-          total: impPie.total,
-          size: "small",
-        })}
+        ${pieCardHtml({ cardKey: `${keyBase}:frequency`, title: "Trade Frequency", subtitle: "Hover slices for values", data: freqPie.data, total: freqPie.total, size: "small" })}
+        ${pieCardHtml({ cardKey: `${keyBase}:volume`, title: "Trade Volume", subtitle: "Hover slices for values", data: volPie.data, total: volPie.total, size: "small" })}
+        ${pieCardHtml({ cardKey: `${keyBase}:exports`, title: "Export Value ($B)", subtitle: "Hover slices for values", data: expPie.data, total: expPie.total, size: "small" })}
+        ${pieCardHtml({ cardKey: `${keyBase}:imports`, title: "Import Value ($B)", subtitle: "ABS used for ranking + slice sizes", data: impPie.data, total: impPie.total, size: "small" })}
       </div>
     </section>
   `;
@@ -1674,30 +1602,10 @@ function viewTrade(planet, overviewPayload, tradePayload) {
       <p class="small">Click any table to expand/collapse full rankings (no page refresh).</p>
 
       <div class="grid2">
-        ${expandableRankingsTable({
-          id: "trade:freq",
-          title: "Trade Frequency",
-          rows: freqRank,
-          fmtFn: (n) => fmtNum(n, 0),
-        })}
-        ${expandableRankingsTable({
-          id: "trade:vol",
-          title: "Trade Volume",
-          rows: volRank,
-          fmtFn: (n) => fmtNum(n, 0),
-        })}
-        ${expandableRankingsTable({
-          id: "trade:exports",
-          title: "Export Value ($B)",
-          rows: expRank,
-          fmtFn: fmtUsdB,
-        })}
-        ${expandableRankingsTable({
-          id: "trade:imports",
-          title: "Import Value ($B)",
-          rows: impRankAbs,
-          fmtFn: (v) => fmtUsdB(Math.abs(v)),
-        })}
+        ${expandableRankingsTable({ id: "trade:freq", title: "Trade Frequency", rows: freqRank, fmtFn: (n) => fmtNum(n, 0) })}
+        ${expandableRankingsTable({ id: "trade:vol", title: "Trade Volume", rows: volRank, fmtFn: (n) => fmtNum(n, 0) })}
+        ${expandableRankingsTable({ id: "trade:exports", title: "Export Value ($B)", rows: expRank, fmtFn: fmtUsdB })}
+        ${expandableRankingsTable({ id: "trade:imports", title: "Import Value ($B)", rows: impRankAbs, fmtFn: (v) => fmtUsdB(Math.abs(v)) })}
       </div>
     </section>
   `;
@@ -1880,103 +1788,6 @@ function viewCountryProfile(planet, overviewPayload, tradePayload, resourcesPayl
   `;
 }
 
-function attachResourcesHandlers(resPayload) {
-  const sel = document.getElementById("resSelect");
-  const totalsEl = document.getElementById("resTotals");
-  const pieEl = document.getElementById("resPie");
-  const legendEl = document.getElementById("resLegend");
-  if (!sel || !totalsEl || !pieEl || !legendEl) return;
-
-  const worldTotals = resPayload?.resources?.worldTotals || [];
-  const breakdownByResource = resPayload?.resources?.breakdownByResource || {};
-  const totalMap = new Map(worldTotals.map((x) => [x.resource, x.total]));
-
-  function render(resource) {
-    const total = totalMap.get(resource);
-    totalsEl.innerHTML = `World total: <strong>${fmtNum(total, 0)}</strong>`;
-
-    const breakdown = breakdownByResource[resource] || [];
-    const data = (breakdown || [])
-      .map((x) => ({ name: String(x.name || ""), value: Number(x.value) }))
-      .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0)
-      .sort((a, b) => b.value - a.value);
-
-    const totalRes = data.reduce((s, x) => s + x.value, 0);
-    if (!data.length || totalRes <= 0) {
-      pieEl.innerHTML = `<div class="small">No countries possess this resource (or all values are 0).</div>`;
-      legendEl.innerHTML = "";
-      return;
-    }
-
-    const W = 720;
-    const H = 480;
-    const cx = W / 2;
-    const cy = H / 2;
-    const r = 185;
-    let start = -Math.PI / 2;
-
-    const slices = data.map((d, i) => {
-      const ang = (d.value / totalRes) * Math.PI * 2;
-      const end = start + ang;
-
-      const x1 = cx + r * Math.cos(start);
-      const y1 = cy + r * Math.sin(start);
-      const x2 = cx + r * Math.cos(end);
-      const y2 = cy + r * Math.sin(end);
-      const large = ang > Math.PI ? 1 : 0;
-
-      const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-
-      const mid = (start + end) / 2;
-      const lx = cx + (r + 34) * Math.cos(mid);
-      const ly = cy + (r + 34) * Math.sin(mid);
-      const label = `${d.name}: ${fmtNum(d.value, 0)}`;
-
-      const color = pieColorForIndex(i, data.length);
-
-      start = end;
-      return { path, color, lx, ly, label };
-    });
-
-    pieEl.innerHTML = `
-      <div class="card" style="box-shadow:none; border:1px solid #eee;">
-        <h4 style="margin:0 0 10px 0; text-align:center;">${escapeHtml(resource)} holdings by country (labels show values)</h4>
-        <div style="display:flex; justify-content:center;">
-          <svg style="display:block; max-width:100%; height:auto;"
-               width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
-               role="img" aria-label="Resource pie chart">
-            ${slices.map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95"></path>`).join("")}
-            ${slices.map((s) => `<text x="${s.lx}" y="${s.ly}" font-size="12" text-anchor="middle">${escapeHtml(s.label)}</text>`).join("")}
-          </svg>
-        </div>
-      </div>
-    `;
-
-    const legendRows = data
-      .map((d, i) => {
-        const color = pieColorForIndex(i, data.length);
-        return `
-          <tr>
-            <td class="legendSwatchCell"><span class="legendSwatchBox" style="background:${color};"></span></td>
-            <td class="legendName">${escapeHtml(d.name)}</td>
-            <td class="legendVal">${escapeHtml(fmtNum(d.value, 0))}</td>
-          </tr>
-        `;
-      })
-      .join("");
-
-    legendEl.innerHTML = `
-      <div class="legendCard">
-        <h4 class="legendTitle">Legend</h4>
-        <table class="legendTable"><tbody>${legendRows}</tbody></table>
-      </div>
-    `;
-  }
-
-  render(sel.value);
-  sel.addEventListener("change", () => render(sel.value));
-}
-
 function viewLoading(msg) {
   return `<section class="card"><h2 class="heroTitle">${escapeHtml(msg)}</h2><p class="small">Loading…</p></section>`;
 }
@@ -2036,6 +1847,26 @@ async function render() {
     return;
   }
 
+  if (path === "/trends") {
+    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
+    setNav(planet, "trends");
+    app.innerHTML = viewLoading(`Loading Trends • ${planet.label}`);
+
+    try {
+      const trendsPayload = await fetchPlanetTrends(planet.id);
+      if (!trendsPayload?.ok) throw new Error(trendsPayload?.error || "Trends ok=false");
+
+      if (!app.dataset.trendFocus) app.dataset.trendFocus = "";
+
+      app.innerHTML = viewTrends(planet, trendsPayload);
+      attachTrendHandlers(trendsPayload, planet);
+    } catch (err) {
+      console.error(err);
+      app.innerHTML = viewError(err);
+    }
+    return;
+  }
+
   if (path === "/trade") {
     const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
     setNav(planet, "trade");
@@ -2076,10 +1907,14 @@ async function render() {
           const items = tradePayload?.trade?.items || [];
 
           let metric = null;
-          if (key.endsWith(":frequency")) metric = { k: "frequency", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
-          if (key.endsWith(":volume")) metric = { k: "volume", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
-          if (key.endsWith(":exports")) metric = { k: "exportValue", fmt: (v) => fmtUsdB(v), absSize: false, absDisp: false };
-          if (key.endsWith(":imports")) metric = { k: "importValue", fmt: (v) => fmtUsdB(v), absSize: true, absDisp: true };
+          if (key.endsWith(":frequency"))
+            metric = { k: "frequency", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
+          if (key.endsWith(":volume"))
+            metric = { k: "volume", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
+          if (key.endsWith(":exports"))
+            metric = { k: "exportValue", fmt: (v) => fmtUsdB(v), absSize: false, absDisp: false };
+          if (key.endsWith(":imports"))
+            metric = { k: "importValue", fmt: (v) => fmtUsdB(v), absSize: true, absDisp: true };
           if (!metric) return;
 
           const pieData = buildTradePieData(items, metric.k, metric.fmt, metric.absSize, metric.absDisp);
@@ -2098,13 +1933,7 @@ async function render() {
             </div>
           `;
 
-          showModal({
-            key,
-            title,
-            subtitle,
-            pieHtml: pieLarge,
-            legendHtml,
-          });
+          showModal({ key, title, subtitle, pieHtml: pieLarge, legendHtml });
 
           const modalPie = document.getElementById("pieModalPie");
           attachPieTooltipHandlers(modalPie);
@@ -2127,26 +1956,6 @@ async function render() {
 
       app.innerHTML = viewResources(planet, resPayload);
       attachResourcesHandlers(resPayload);
-    } catch (err) {
-      console.error(err);
-      app.innerHTML = viewError(err);
-    }
-    return;
-  }
-
-  if (path === "/trends") {
-    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
-    setNav(planet, "trends");
-    app.innerHTML = viewLoading(`Loading Trends • ${planet.label}`);
-
-    try {
-      const trendsPayload = await fetchPlanetTrends(planet.id);
-      if (!trendsPayload?.ok) throw new Error(trendsPayload?.error || "Trends ok=false");
-
-      if (!app.dataset.trendFocus) app.dataset.trendFocus = "";
-
-      app.innerHTML = viewTrends(planet, trendsPayload);
-      attachTrendHandlers(trendsPayload, planet);
     } catch (err) {
       console.error(err);
       app.innerHTML = viewError(err);
@@ -2191,14 +2000,7 @@ async function render() {
       const country = findCountryInPayload(overviewPayload, countryKey);
       if (!country) throw new Error(`Country not found: ${countryKey || "unknown"}`);
 
-      app.innerHTML = viewCountryProfile(
-        planet,
-        overviewPayload,
-        tradePayload,
-        resourcesPayload,
-        country
-      );
-
+      app.innerHTML = viewCountryProfile(planet, overviewPayload, tradePayload, resourcesPayload, country);
       document.querySelectorAll(".chartPieBox").forEach((el) => attachPieTooltipHandlers(el));
     } catch (err) {
       console.error(err);
