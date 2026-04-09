@@ -1,4 +1,6 @@
 // assets/js/app.js
+// Updated: 2026-04-09 (Add FOREX chart + exchange calculator on Trade page)
+
 import { API_BASE, PLANETS, RELATIONSHIP_STYLES } from "./config.js";
 
 const nav = document.getElementById("nav");
@@ -282,6 +284,26 @@ function fmtNum(n, digits = 0) {
   if (n === null || n === undefined || n === "") return "—";
   const v = Number(n);
   if (!Number.isFinite(v)) return "—";
+  return v.toLocaleString(undefined, { maximumFractionDigits: digits });
+}
+
+// Forex value formatter (USD per 1 unit), show more precision
+function fmtUsdPerUnit(n) {
+  if (n === null || n === undefined || n === "") return "—";
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "—";
+  // Adaptive precision: small values get more digits
+  const abs = Math.abs(v);
+  const digits = abs >= 1 ? 3 : abs >= 0.1 ? 4 : 6;
+  return `$${v.toLocaleString(undefined, { maximumFractionDigits: digits })}`;
+}
+
+function fmtFxRate(n) {
+  if (n === null || n === undefined || n === "") return "—";
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "—";
+  const abs = Math.abs(v);
+  const digits = abs >= 10 ? 3 : abs >= 1 ? 4 : 6;
   return v.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
@@ -1247,7 +1269,7 @@ function buildTrendSvg({
     gridLabelLens.push(String(fmtY(val)).length);
   }
   const maxLabelLen = Math.max(...gridLabelLens, 4);
-  const padL = Math.min(140, Math.max(54, 18 + maxLabelLen * 7));
+  const padL = Math.min(160, Math.max(54, 18 + maxLabelLen * 7));
 
   const x0 = padL;
   const x1 = W - padR;
@@ -1574,6 +1596,260 @@ function attachTrendHandlers(trendsPayload, planet) {
 }
 
 /* =========================================================
+   NEW: Forex chart + calculator (Trade page)
+========================================================= */
+
+function getForexFromTradePayload(tradePayload) {
+  // Apps Script returns forex at tradePayload.forex when ok
+  const fx = tradePayload?.forex || null;
+  const items = Array.isArray(fx?.items) ? fx.items : [];
+  const currencies = Array.isArray(fx?.currencies) ? fx.currencies : [];
+  const currencyMap = fx?.currencyMap && typeof fx.currencyMap === "object" ? fx.currencyMap : {};
+  return { fx, items, currencies, currencyMap };
+}
+
+function buildForexSeriesMap(items) {
+  const seriesMap = {};
+  const countries = [];
+  (items || []).forEach((it) => {
+    const name = String(it?.name || "").trim();
+    const series = Array.isArray(it?.series) ? it.series : [];
+    if (!name) return;
+    countries.push(name);
+    seriesMap[name] = series.map((v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    });
+  });
+  countries.sort((a, b) => String(a).localeCompare(String(b)));
+  return { countries, seriesMap };
+}
+
+function viewForexSection(tradePayload) {
+  const yNum = Number(tradePayload?.year);
+  const currentYear = Number.isFinite(yNum) ? Math.max(1, Math.min(6, yNum)) : 1;
+  const years = Array.from({ length: currentYear }, (_, i) => i + 1);
+
+  const { fx, items, currencies } = getForexFromTradePayload(tradePayload);
+
+  if (!fx) {
+    const err = tradePayload?.forexError ? String(tradePayload.forexError) : "";
+    return `
+      <section class="card">
+        <h3 class="sectionTitle">Foreign Exchange</h3>
+        <div class="small">No FOREX data found for this planet.</div>
+        ${err ? `<div class="small" style="margin-top:8px;"><strong>Error:</strong> ${escapeHtml(err)}</div>` : ""}
+      </section>
+    `;
+  }
+
+  if (!items.length) {
+    return `
+      <section class="card">
+        <h3 class="sectionTitle">Foreign Exchange</h3>
+        <div class="small">FOREX tab is present, but it has no country rows yet.</div>
+      </section>
+    `;
+  }
+
+  const focused = app?.dataset?.fxFocus || "";
+  const yLabel = `Year 1 → Year ${currentYear}`;
+
+  const { countries, seriesMap } = buildForexSeriesMap(items);
+
+  const chartHtml = buildTrendSvg({
+    indicatorKey: "forex-usd-per-unit",
+    title: "Currency Value vs USD (USD per 1 unit)",
+    years,
+    countries,
+    seriesMap,
+    focusedCountry: focused,
+    valueFormatter: fmtUsdPerUnit,
+    width: 940,
+    height: 360,
+  });
+
+  // Calculator options
+  const opts = currencies
+    .map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.label)}</option>`)
+    .join("");
+
+  return `
+    <section class="card">
+      <h3 class="sectionTitle">Foreign Exchange</h3>
+      <div class="small">
+        ${escapeHtml(yLabel)} • Click a country to highlight its currency value trend.
+      </div>
+
+      <div class="small" style="margin-top:8px;">
+        Highlighted country: <strong id="fxFocusName">${escapeHtml(focused || "None")}</strong>
+        <button id="fxClearBtn" type="button"
+                style="margin-left:10px; padding:6px 10px; border-radius:10px; border:1px solid #ddd;
+                       background:#fff; color:#111; cursor:pointer;">
+          Clear
+        </button>
+      </div>
+
+      <div style="margin-top:12px;">
+        ${chartHtml}
+      </div>
+    </section>
+
+    <section class="card">
+      <h3 class="sectionTitle">Exchange Rate Calculator</h3>
+      <div class="small">Uses the <strong>current year</strong> forex values for this planet.</div>
+
+      <div class="hstack" style="gap:12px; align-items:center; margin-top:12px; flex-wrap:wrap;">
+        <div class="small"><strong>Convert:</strong></div>
+
+        <select id="fxFrom" style="padding:8px 10px; border-radius:10px; border:1px solid #ddd;">
+          ${opts}
+        </select>
+
+        <div class="small">to</div>
+
+        <select id="fxTo" style="padding:8px 10px; border-radius:10px; border:1px solid #ddd;">
+          ${opts}
+        </select>
+
+        <button id="fxSwapBtn" type="button"
+                style="padding:8px 12px; border-radius:10px; border:1px solid #ddd;
+                       background:#fff; color:#111; cursor:pointer;">
+          Swap
+        </button>
+      </div>
+
+      <div id="fxResult" class="card" style="margin-top:12px; box-shadow:none; border:1px solid #eee;">
+        <div class="small">Select two currencies to see the current exchange rate.</div>
+      </div>
+    </section>
+  `;
+}
+
+function attachForexHandlers(tradePayload) {
+  if (!app) return;
+
+  const { fx, currencyMap } = getForexFromTradePayload(tradePayload);
+  if (!fx) return;
+
+  function setFxFocus(countryNameOrBlank) {
+    app.dataset.fxFocus = countryNameOrBlank ? String(countryNameOrBlank) : "";
+    // Re-render ONLY the trade page content (we are on trade route)
+    // The router will rebind handlers after we call renderTradeView_ below.
+    renderTradeView_(tradePayload);
+  }
+
+  const clearBtn = document.getElementById("fxClearBtn");
+  if (clearBtn) clearBtn.addEventListener("click", () => setFxFocus(""));
+
+  // Note: buildTrendSvg uses .trendLine + .trendLegendItem
+  // Since Trade page also contains pies, this selector is safe:
+  document.querySelectorAll(".trendSvg[data-ind='forex-usd-per-unit'] .trendLine[data-country]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      const c = el.getAttribute("data-country") || "";
+      const now = normalizeId(app.dataset.fxFocus || "");
+      const next = now && normalizeId(c) === now ? "" : c;
+      setFxFocus(next);
+    });
+  });
+
+  document.querySelectorAll(".trendLegendItem[data-ind='forex-usd-per-unit'][data-country]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const c = btn.getAttribute("data-country") || "";
+      const now = normalizeId(app.dataset.fxFocus || "");
+      const next = now && normalizeId(c) === now ? "" : c;
+      setFxFocus(next);
+    });
+  });
+
+  // Calculator
+  const fromSel = document.getElementById("fxFrom");
+  const toSel = document.getElementById("fxTo");
+  const swapBtn = document.getElementById("fxSwapBtn");
+  const out = document.getElementById("fxResult");
+  if (!fromSel || !toSel || !out) return;
+
+  function computeRate(fromId, toId) {
+    const A = currencyMap?.[fromId];
+    const B = currencyMap?.[toId];
+    const aUsd = Number(A?.usdPerUnit);
+    const bUsd = Number(B?.usdPerUnit);
+    if (!Number.isFinite(aUsd) || !Number.isFinite(bUsd) || bUsd === 0) return null;
+    return aUsd / bUsd;
+  }
+
+  function renderRate() {
+    const fromId = fromSel.value;
+    const toId = toSel.value;
+    if (!fromId || !toId) return;
+
+    const A = currencyMap?.[fromId];
+    const B = currencyMap?.[toId];
+    const rate = computeRate(fromId, toId);
+
+    if (!A || !B || rate === null) {
+      out.innerHTML = `<div class="small">Could not compute rate (missing forex values).</div>`;
+      return;
+    }
+
+    const inv = rate !== 0 ? 1 / rate : null;
+
+    out.innerHTML = `
+      <div class="small" style="margin-bottom:6px;">
+        <strong>Current exchange rate</strong> (Year ${escapeHtml(String(A.year ?? tradePayload?.year ?? ""))})
+      </div>
+
+      <div style="font-size:18px; font-weight:800; margin-bottom:6px;">
+        1 ${escapeHtml(A.currencyName || A.countryName)} = ${escapeHtml(fmtFxRate(rate))} ${escapeHtml(
+          B.currencyName || B.countryName
+        )}
+      </div>
+
+      <div class="small" style="opacity:0.9;">
+        USD per 1 unit:
+        <strong>${escapeHtml(A.label)}</strong> = ${escapeHtml(fmtUsdPerUnit(A.usdPerUnit))} •
+        <strong>${escapeHtml(B.label)}</strong> = ${escapeHtml(fmtUsdPerUnit(B.usdPerUnit))}
+      </div>
+
+      ${
+        inv !== null
+          ? `<div class="small" style="margin-top:6px; opacity:0.9;">
+               Inverse: 1 ${escapeHtml(B.currencyName || B.countryName)} = ${escapeHtml(
+              fmtFxRate(inv)
+            )} ${escapeHtml(A.currencyName || A.countryName)}
+             </div>`
+          : ""
+      }
+    `;
+  }
+
+  fromSel.addEventListener("change", renderRate);
+  toSel.addEventListener("change", renderRate);
+
+  if (swapBtn) {
+    swapBtn.addEventListener("click", () => {
+      const a = fromSel.value;
+      fromSel.value = toSel.value;
+      toSel.value = a;
+      renderRate();
+    });
+  }
+
+  // Reasonable default: first two currencies if present
+  if (fromSel.options.length > 0 && toSel.options.length > 1) {
+    fromSel.selectedIndex = 0;
+    toSel.selectedIndex = 1;
+    renderRate();
+  } else if (fromSel.options.length > 0) {
+    fromSel.selectedIndex = 0;
+    toSel.selectedIndex = 0;
+    renderRate();
+  }
+}
+
+/* =========================================================
    Views (pages)
 ========================================================= */
 
@@ -1717,12 +1993,105 @@ function viewTrade(planet, overviewPayload, tradePayload) {
     </section>
   `;
 
+  const forexHtml = viewForexSection(tradePayload);
+
   return `
     ${planetHeader(planet, tradePayload)}
     ${diplomacySectionFromPayload(overviewPayload)}
     ${piesHtml}
     ${tablesHtml}
+    ${forexHtml}
   `;
+}
+
+/**
+ * Helper to re-render Trade page without re-fetching.
+ * Used for fast forex focus updates.
+ */
+function renderTradeView_(tradePayloadCached) {
+  const { path, params } = parseRoute();
+  const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
+  if (!planet) return;
+
+  // We still need overview payload for diplomacy web
+  // If we don't have it cached, fall back to full render() which fetches.
+  const overviewJson = app?.dataset?.tradeOverviewJson;
+  if (!overviewJson) {
+    render();
+    return;
+  }
+
+  let overviewPayload = null;
+  try {
+    overviewPayload = JSON.parse(overviewJson);
+  } catch {
+    render();
+    return;
+  }
+
+  app.innerHTML = viewTrade(planet, overviewPayload, tradePayloadCached);
+
+  attachDiplomacyTooltipHandlers();
+  attachDiplomacyFocusHandlers();
+  attachExpandableTableHandlers();
+
+  document.querySelectorAll(".chartCard").forEach((card) => attachPieTooltipHandlers(card));
+
+  // re-bind pie modal click
+  document.querySelectorAll(".chartCard[data-chartkey]").forEach((card) => {
+    card.addEventListener("click", () => {
+      const key = card.getAttribute("data-chartkey");
+      if (!key) return;
+
+      const overlay = document.getElementById("pieModalOverlay");
+      const alreadyOpen = overlay && overlay.classList.contains("show");
+      const currentKey = overlay?.getAttribute("data-key");
+      if (alreadyOpen && currentKey === key) {
+        hideModal();
+        return;
+      }
+
+      const title = card.querySelector(".chartTitle")?.textContent || "Chart";
+      const subtitle = `${yearTitleFromPayload(tradePayloadCached)} • ${planet.label}`;
+
+      const items = tradePayloadCached?.trade?.items || [];
+
+      let metric = null;
+      if (key.endsWith(":frequency"))
+        metric = { k: "frequency", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
+      if (key.endsWith(":volume"))
+        metric = { k: "volume", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
+      if (key.endsWith(":exports"))
+        metric = { k: "exportValue", fmt: (v) => fmtUsdB(v), absSize: false, absDisp: false };
+      if (key.endsWith(":imports"))
+        metric = { k: "importValue", fmt: (v) => fmtUsdB(v), absSize: true, absDisp: true };
+      if (!metric) return;
+
+      const pieData = buildTradePieData(items, metric.k, metric.fmt, metric.absSize, metric.absDisp);
+
+      const pieLarge = pieSvgHtml({
+        data: pieData.data,
+        total: pieData.total,
+        size: "large",
+        ariaLabel: `${title} enlarged`,
+      });
+
+      const legendHtml = `
+        <div class="legendCard">
+          <h4 class="legendTitle">All countries</h4>
+          ${legendTableHtml(pieData.data)}
+        </div>
+      `;
+
+      showModal({ key, title, subtitle, pieHtml: pieLarge, legendHtml });
+
+      const modalPie = document.getElementById("pieModalPie");
+      attachPieTooltipHandlers(modalPie);
+    });
+  });
+
+  // Forex handlers (focus + calculator)
+  attachForexHandlers(tradePayloadCached);
 }
 
 function viewResources(planet, resPayload) {
@@ -2075,6 +2444,12 @@ async function render() {
       if (!overviewPayload?.ok) throw new Error(overviewPayload?.error || "Overview ok=false");
       if (!tradePayload?.ok) throw new Error(tradePayload?.error || "Trade ok=false");
 
+      // Initialize forex focus storage
+      if (!app.dataset.fxFocus) app.dataset.fxFocus = "";
+
+      // Cache overview in dataset so forex focus can re-render without re-fetching
+      app.dataset.tradeOverviewJson = JSON.stringify(overviewPayload);
+
       app.innerHTML = viewTrade(planet, overviewPayload, tradePayload);
 
       attachDiplomacyTooltipHandlers();
@@ -2134,6 +2509,9 @@ async function render() {
           attachPieTooltipHandlers(modalPie);
         });
       });
+
+      // Forex (focus + calculator)
+      attachForexHandlers(tradePayload);
     } catch (err) {
       console.error(err);
       app.innerHTML = viewError(err);
