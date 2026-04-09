@@ -262,6 +262,42 @@ function fmtNum(n, digits = 0) {
   return v.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
+// NEW: Trend axis/value formatter selector (adds $ / % where appropriate)
+function trendValueFormatterForKey(indicatorKey) {
+  const k = normalizeId(indicatorKey);
+
+  // % indicators
+  if (
+    k.includes("rate") ||
+    k.includes("infl") ||
+    k.includes("unemp") ||
+    k.includes("growth") ||
+    k.includes("ffr") ||
+    k.includes("fedfund") ||
+    k.includes("fed_fund")
+  ) {
+    return (v) => fmtPct(v);
+  }
+
+  // $ indicators
+  if (
+    k.includes("rgdp") ||
+    k.includes("gdp") ||
+    k.includes("budget") ||
+    k.includes("debt") ||
+    k.includes("export") ||
+    k.includes("import") ||
+    k.includes("tradebalance")
+  ) {
+    // rGDPpc is not billions in most datasets
+    if (k.includes("pc") || k.includes("percap")) return (v) => fmtUsd(v, 0);
+    return (v) => fmtUsdB(v);
+  }
+
+  // default numeric
+  return (v) => fmtNum(v, 1);
+}
+
 /* =========================================================
    Country profile helpers
 ========================================================= */
@@ -1063,6 +1099,7 @@ function buildTrendSvg({
   countries,
   seriesMap,
   focusedCountry,
+  valueFormatter, // NEW
   width = 940,
   height = 360,
 }) {
@@ -1081,12 +1118,13 @@ function buildTrendSvg({
   if (!hasData) return `<div class="small">No data yet for this indicator.</div>`;
 
   // Dynamic left padding so Y-axis labels never clip
-  const sampleGridLabel = (v) => fmtNum(v, 1);
+  const fmtY = typeof valueFormatter === "function" ? valueFormatter : (v) => fmtNum(v, 1);
+
   const gridLabelLens = [];
   for (let g = 0; g <= 4; g++) {
     const t = g / 4;
     const val = min + t * (max - min);
-    gridLabelLens.push(sampleGridLabel(val).length);
+    gridLabelLens.push(String(fmtY(val)).length);
   }
   const maxLabelLen = Math.max(...gridLabelLens, 4);
   const padL = Math.min(140, Math.max(54, 18 + maxLabelLen * 7));
@@ -1159,13 +1197,64 @@ function buildTrendSvg({
       />`;
   });
 
+  // If a country is focused, draw dots + value labels on its line
+  let focusedPointLabels = "";
+  if (focusedCountry) {
+    const focusKey = normalizeId(focusedCountry);
+    const focusIdx = countries.findIndex((c) => normalizeId(c) === focusKey);
+    const focusName = focusIdx >= 0 ? countries[focusIdx] : null;
+
+    if (focusName) {
+      const color = trendColorForIndex(focusIdx, countries.length);
+      const arr = seriesMap?.[focusName] || [];
+
+      const dots = [];
+      const labels = [];
+
+      for (let k = 0; k < yearsCount; k++) {
+        const v = Number(arr[k]);
+        if (!Number.isFinite(v)) continue;
+
+        const x = xForIdx(k);
+        const y = yForVal(v);
+        const txt = fmtY(v);
+
+        // dot
+        dots.push(
+          `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="4.2"
+                   fill="${color}" stroke="rgba(0,0,0,0.35)" stroke-width="1" />`
+        );
+
+        // label (slightly up-right of the dot)
+        labels.push(
+          `<text x="${(x + 7).toFixed(2)}" y="${(y - 7).toFixed(2)}"
+                 font-size="12"
+                 fill="rgba(255,255,255,0.92)"
+                 stroke="rgba(0,0,0,0.55)"
+                 stroke-width="3"
+                 paint-order="stroke"
+                 dominant-baseline="middle">
+             ${escapeHtml(txt)}
+           </text>`
+        );
+      }
+
+      focusedPointLabels = `
+        <g class="trendPointLabels" pointer-events="none">
+          ${dots.join("")}
+          ${labels.join("")}
+        </g>
+      `;
+    }
+  }
+
   // Dark chart: white-ish labels/grid
   const yLabels = gridLines
     .map(
       (g) => `
         <text x="${padL - 12}" y="${g.y.toFixed(2)}" text-anchor="end" dominant-baseline="middle"
               font-size="12" fill="rgba(255,255,255,0.75)">
-          ${escapeHtml(fmtNum(g.val, 1))}
+          ${escapeHtml(fmtY(g.val))}
         </text>`
     )
     .join("");
@@ -1247,6 +1336,7 @@ function buildTrendSvg({
             ${yLabels}
             ${xTickHtml}
             ${paths.join("")}
+            ${focusedPointLabels}
           </svg>
         </div>
       </div>
@@ -1277,6 +1367,7 @@ function viewTrends(planet, trendsPayload) {
         countries,
         seriesMap: series,
         focusedCountry: focused || "",
+        valueFormatter: trendValueFormatterForKey(key),
       });
     })
     .join("");
