@@ -1225,19 +1225,45 @@ function buildTrendSvg({
                    fill="${color}" stroke="rgba(0,0,0,0.35)" stroke-width="1" />`
         );
 
-        // label (slightly up-right of the dot)
-        labels.push(
-          `<text x="${(x + 7).toFixed(2)}" y="${(y - 7).toFixed(2)}"
-                 font-size="12"
-                 fill="rgba(255,255,255,0.92)"
-                 stroke="rgba(0,0,0,0.55)"
-                 stroke-width="3"
-                 paint-order="stroke"
-                 dominant-baseline="middle">
-             ${escapeHtml(txt)}
-           </text>`
-        );
-      }
+   // label: keep inside chart bounds (flip near edges)
+   const txt = fmtY(v);
+   
+   // approximate pixel width of label text (good enough for clamping)
+   const approxCharW = 7;
+   const textW = Math.max(24, String(txt).length * approxCharW);
+   
+   const margin = 10;
+   
+   // if we're near the right edge, put label to the LEFT and right-align it
+   const nearRight = x > (W - padR - textW - margin);
+   const nearLeft = x < (padL + textW + margin);
+   const nearTop = y < (padT + 18);
+   
+   const dx = nearRight ? -8 : 8;
+   const dy = nearTop ? 14 : -10;
+   
+   // choose anchor so text grows inward
+   const anchor = nearRight ? "end" : "start";
+   
+   // clamp final x/y just in case
+   let lx = x + dx;
+   let ly = y + dy;
+   
+   lx = Math.max(padL + margin, Math.min(W - padR - margin, lx));
+   ly = Math.max(padT + margin, Math.min(H - padB - margin, ly));
+   
+   labels.push(
+     `<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}"
+            text-anchor="${anchor}"
+            font-size="12"
+            fill="rgba(255,255,255,0.92)"
+            stroke="rgba(0,0,0,0.55)"
+            stroke-width="3"
+            paint-order="stroke"
+            dominant-baseline="middle">
+        ${escapeHtml(txt)}
+      </text>`
+   );
 
       focusedPointLabels = `
         <g class="trendPointLabels" pointer-events="none">
