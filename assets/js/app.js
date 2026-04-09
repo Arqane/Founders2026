@@ -100,7 +100,9 @@ function ensureOneModalExists() {
   `;
   document.body.appendChild(overlay);
 
-  document.getElementById("pieModalClose").addEventListener("click", () => hideModal());
+  document
+    .getElementById("pieModalClose")
+    .addEventListener("click", () => hideModal());
 
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) hideModal();
@@ -153,27 +155,37 @@ function setNav(planet = null, active = "overview") {
     ? `
     <div class="navTabs" style="display:flex; gap:10px; align-items:center;">
       <a class="navTab" href="#/planet?planet=${encodeURIComponent(planet.id)}"
-         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "overview")}">
+         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(
+           active === "overview"
+         )}">
         Overview
       </a>
 
       <a class="navTab" href="#/trends?planet=${encodeURIComponent(planet.id)}"
-         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "trends")}">
+         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(
+           active === "trends"
+         )}">
         Trends
       </a>
 
       <a class="navTab" href="#/trade?planet=${encodeURIComponent(planet.id)}"
-         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "trade")}">
+         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(
+           active === "trade"
+         )}">
         Trade
       </a>
 
       <a class="navTab" href="#/resources?planet=${encodeURIComponent(planet.id)}"
-         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "resources")}">
+         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(
+           active === "resources"
+         )}">
         Resources
       </a>
 
       <a class="navTab" href="#/countries?planet=${encodeURIComponent(planet.id)}"
-         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(active === "countries")}">
+         style="padding:8px 12px;border-radius:10px;text-decoration:none;${tabStyle(
+           active === "countries"
+         )}">
         Countries
       </a>
     </div>
@@ -207,19 +219,27 @@ async function fetchApiHealth() {
 }
 
 async function fetchPlanetOverview(planetId) {
-  return fetchJson(`${API_BASE}?view=planet&planet=${encodeURIComponent(planetId)}&nocache=1`);
+  return fetchJson(
+    `${API_BASE}?view=planet&planet=${encodeURIComponent(planetId)}&nocache=1`
+  );
 }
 
 async function fetchPlanetTrade(planetId) {
-  return fetchJson(`${API_BASE}?view=trade&planet=${encodeURIComponent(planetId)}&nocache=1`);
+  return fetchJson(
+    `${API_BASE}?view=trade&planet=${encodeURIComponent(planetId)}&nocache=1`
+  );
 }
 
 async function fetchPlanetResources(planetId) {
-  return fetchJson(`${API_BASE}?view=resources&planet=${encodeURIComponent(planetId)}&nocache=1`);
+  return fetchJson(
+    `${API_BASE}?view=resources&planet=${encodeURIComponent(planetId)}&nocache=1`
+  );
 }
 
 async function fetchPlanetTrends(planetId) {
-  return fetchJson(`${API_BASE}?view=trends&planet=${encodeURIComponent(planetId)}&nocache=1`);
+  return fetchJson(
+    `${API_BASE}?view=trends&planet=${encodeURIComponent(planetId)}&nocache=1`
+  );
 }
 
 /* =========================================================
@@ -238,7 +258,10 @@ function fmtUsdTFromBillions(n) {
   const b = Number(n);
   if (!Number.isFinite(b)) return "—";
   const t = b / 1000;
-  return `$${t.toLocaleString(undefined, { maximumFractionDigits: 1, minimumFractionDigits: 1 })}T`;
+  return `$${t.toLocaleString(undefined, {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 1,
+  })}T`;
 }
 
 function fmtUsd(n, digits = 0) {
@@ -262,7 +285,7 @@ function fmtNum(n, digits = 0) {
   return v.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
-// NEW: Trend axis/value formatter selector (adds $ / % where appropriate)
+// Trend axis/value formatter selector (adds $ / % where appropriate)
 function trendValueFormatterForKey(indicatorKey) {
   const k = normalizeId(indicatorKey);
 
@@ -340,7 +363,9 @@ function getCountryRank(rankRows, country) {
 }
 
 function getTradeItemForCountry(tradePayload, country) {
-  const items = Array.isArray(tradePayload?.trade?.items) ? tradePayload.trade.items : [];
+  const items = Array.isArray(tradePayload?.trade?.items)
+    ? tradePayload.trade.items
+    : [];
   return (
     items.find((x) => normalizeId(x?.id) === normalizeId(country?.id)) ||
     items.find((x) => normalizeId(x?.name) === normalizeId(country?.name)) ||
@@ -349,7 +374,9 @@ function getTradeItemForCountry(tradePayload, country) {
 }
 
 function getTradeRank(tradePayload, country, key, dir = "desc", useAbs = false) {
-  const items = Array.isArray(tradePayload?.trade?.items) ? tradePayload.trade.items : [];
+  const items = Array.isArray(tradePayload?.trade?.items)
+    ? tradePayload.trade.items
+    : [];
 
   const ranked = items
     .map((x) => {
@@ -363,7 +390,9 @@ function getTradeRank(tradePayload, country, key, dir = "desc", useAbs = false) 
       };
     })
     .filter(Boolean)
-    .sort((a, b) => (dir === "asc" ? a.sortValue - b.sortValue : b.sortValue - a.sortValue));
+    .sort((a, b) =>
+      dir === "asc" ? a.sortValue - b.sortValue : b.sortValue - a.sortValue
+    );
 
   const idx = ranked.findIndex(
     (x) =>
@@ -405,35 +434,107 @@ function buildCountryStatRows(country, overviewPayload, tradePayload) {
   const indicators = country?.indicators || {};
   const tradeItem = getTradeItemForCountry(tradePayload, country);
 
-  const overviewCountryCount = Array.isArray(overviewPayload?.countries) ? overviewPayload.countries.length : 0;
-  const tradeItems = Array.isArray(tradePayload?.trade?.items) ? tradePayload.trade.items : [];
+  const overviewCountryCount = Array.isArray(overviewPayload?.countries)
+    ? overviewPayload.countries.length
+    : 0;
+  const tradeItems = Array.isArray(tradePayload?.trade?.items)
+    ? tradePayload.trade.items
+    : [];
   const tradeCountryCount = tradeItems.length;
 
   const exportValue = Number(tradeItem?.exportValue);
   const importValue = Number(tradeItem?.importValue);
   const tradeBalance =
-    Number.isFinite(exportValue) && Number.isFinite(importValue) ? exportValue - importValue : null;
+    Number.isFinite(exportValue) && Number.isFinite(importValue)
+      ? exportValue - importValue
+      : null;
 
   const rows = [
-    { label: "Real GDP", valueText: fmtUsdB(indicators.rGDP), rank: getCountryRank(overviewPayload?.rankings?.rGDP, country), rankBase: overviewCountryCount },
-    { label: "Real GDP per Capita", valueText: fmtUsd(indicators.rGDPpc, 0), rank: getCountryRank(overviewPayload?.rankings?.rGDPpc, country), rankBase: overviewCountryCount },
-    { label: "Real GDP Growth Rate", valueText: fmtPct(indicators.rGDPGrowth), rank: getCountryRank(overviewPayload?.rankings?.rGDPGrowth, country), rankBase: overviewCountryCount },
-    { label: "Unemployment Rate", valueText: fmtPct(indicators.unemployment), rank: getCountryRank(overviewPayload?.rankings?.unemployment, country), rankBase: overviewCountryCount },
-    { label: "Inflation Rate", valueText: fmtPct(indicators.inflation), rank: getCountryRank(overviewPayload?.rankings?.inflation, country), rankBase: overviewCountryCount },
-    { label: "Budget Deficit/Surplus", valueText: fmtUsdB(indicators.budgetDeficit), rank: getCountryRank(overviewPayload?.rankings?.budgetDeficit, country), rankBase: overviewCountryCount },
-    { label: "National Debt/Fund", valueText: fmtUsdB(indicators.nationalDebt), rank: getCountryRank(overviewPayload?.rankings?.nationalDebt, country), rankBase: overviewCountryCount },
-    { label: "Federal Funds Rate", valueText: fmtPct(indicators.fedFundsRate), rank: getCountryRank(overviewPayload?.rankings?.fedFundsRate, country), rankBase: overviewCountryCount },
-    { label: "Population", valueText: fmtNum(indicators.population, 0), rank: getCountryRank(overviewPayload?.rankings?.population, country), rankBase: overviewCountryCount },
-    { label: "Trade Frequency", valueText: fmtNum(tradeItem?.frequency, 0), rank: getTradeRank(tradePayload, country, "frequency", "desc", false), rankBase: tradeCountryCount },
-    { label: "Trade Volume", valueText: fmtNum(tradeItem?.volume, 0), rank: getTradeRank(tradePayload, country, "volume", "desc", false), rankBase: tradeCountryCount },
-    { label: "Exports", valueText: fmtUsdB(tradeItem?.exportValue), rank: getTradeRank(tradePayload, country, "exportValue", "desc", false), rankBase: tradeCountryCount },
-    { label: "Imports", valueText: fmtUsdB(tradeItem?.importValue), rank: getTradeRank(tradePayload, country, "importValue", "desc", true), rankBase: tradeCountryCount },
+    {
+      label: "Real GDP",
+      valueText: fmtUsdB(indicators.rGDP),
+      rank: getCountryRank(overviewPayload?.rankings?.rGDP, country),
+      rankBase: overviewCountryCount,
+    },
+    {
+      label: "Real GDP per Capita",
+      valueText: fmtUsd(indicators.rGDPpc, 0),
+      rank: getCountryRank(overviewPayload?.rankings?.rGDPpc, country),
+      rankBase: overviewCountryCount,
+    },
+    {
+      label: "Real GDP Growth Rate",
+      valueText: fmtPct(indicators.rGDPGrowth),
+      rank: getCountryRank(overviewPayload?.rankings?.rGDPGrowth, country),
+      rankBase: overviewCountryCount,
+    },
+    {
+      label: "Unemployment Rate",
+      valueText: fmtPct(indicators.unemployment),
+      rank: getCountryRank(overviewPayload?.rankings?.unemployment, country),
+      rankBase: overviewCountryCount,
+    },
+    {
+      label: "Inflation Rate",
+      valueText: fmtPct(indicators.inflation),
+      rank: getCountryRank(overviewPayload?.rankings?.inflation, country),
+      rankBase: overviewCountryCount,
+    },
+    {
+      label: "Budget Deficit/Surplus",
+      valueText: fmtUsdB(indicators.budgetDeficit),
+      rank: getCountryRank(overviewPayload?.rankings?.budgetDeficit, country),
+      rankBase: overviewCountryCount,
+    },
+    {
+      label: "National Debt/Fund",
+      valueText: fmtUsdB(indicators.nationalDebt),
+      rank: getCountryRank(overviewPayload?.rankings?.nationalDebt, country),
+      rankBase: overviewCountryCount,
+    },
+    {
+      label: "Federal Funds Rate",
+      valueText: fmtPct(indicators.fedFundsRate),
+      rank: getCountryRank(overviewPayload?.rankings?.fedFundsRate, country),
+      rankBase: overviewCountryCount,
+    },
+    {
+      label: "Population",
+      valueText: fmtNum(indicators.population, 0),
+      rank: getCountryRank(overviewPayload?.rankings?.population, country),
+      rankBase: overviewCountryCount,
+    },
+    {
+      label: "Trade Frequency",
+      valueText: fmtNum(tradeItem?.frequency, 0),
+      rank: getTradeRank(tradePayload, country, "frequency", "desc", false),
+      rankBase: tradeCountryCount,
+    },
+    {
+      label: "Trade Volume",
+      valueText: fmtNum(tradeItem?.volume, 0),
+      rank: getTradeRank(tradePayload, country, "volume", "desc", false),
+      rankBase: tradeCountryCount,
+    },
+    {
+      label: "Exports",
+      valueText: fmtUsdB(tradeItem?.exportValue),
+      rank: getTradeRank(tradePayload, country, "exportValue", "desc", false),
+      rankBase: tradeCountryCount,
+    },
+    {
+      label: "Imports",
+      valueText: fmtUsdB(tradeItem?.importValue),
+      rank: getTradeRank(tradePayload, country, "importValue", "desc", true),
+      rankBase: tradeCountryCount,
+    },
     { label: "Trade Balance", valueText: fmtUsdB(tradeBalance), rank: null, rankBase: null },
   ];
 
   return rows.map((row) => ({
     ...row,
-    rankingText: row.rank && row.rankBase ? `${ordinal(row.rank)} out of ${row.rankBase}` : "—",
+    rankingText:
+      row.rank && row.rankBase ? `${ordinal(row.rank)} out of ${row.rankBase}` : "—",
   }));
 }
 
@@ -489,7 +590,8 @@ function attachPieTooltipHandlers(container) {
 }
 
 function pieSvgHtml({ data, total, size, ariaLabel }) {
-  if (!Array.isArray(data) || !data.length || !(total > 0)) return `<div class="small">No data.</div>`;
+  if (!Array.isArray(data) || !data.length || !(total > 0))
+    return `<div class="small">No data.</div>`;
 
   const W = size === "large" ? 720 : 420;
   const H = size === "large" ? 520 : 320;
@@ -528,7 +630,12 @@ function pieSvgHtml({ data, total, size, ariaLabel }) {
            width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
            role="img" aria-label="${escapeHtml(ariaLabel || "Pie chart")}">
         ${slices
-          .map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95" data-tip="${escapeHtml(s.tip)}"></path>`)
+          .map(
+            (s) =>
+              `<path d="${s.path}" fill="${s.color}" opacity="0.95" data-tip="${escapeHtml(
+                s.tip
+              )}"></path>`
+          )
           .join("")}
       </svg>
     </div>
@@ -562,7 +669,10 @@ function legendTableHtml(data) {
 
 function legendHtml() {
   const items = Object.entries(RELATIONSHIP_STYLES)
-    .map(([_, v]) => `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`)
+    .map(
+      ([_, v]) =>
+        `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
+    )
     .join("");
   return `<div class="graphLegendWrap"><div class="graphLegend">${items}</div></div>`;
 }
@@ -628,7 +738,9 @@ function diplomacyWebSvgFromEdges(countries, edges) {
       <g class="dipNode" data-id="${escapeHtml(nn.id)}">
         <circle class="nodeCircle" cx="${nn.x.toFixed(2)}" cy="${nn.y.toFixed(2)}" r="18" fill="rgba(255,255,255,0.08)"></circle>
         <circle class="nodeDot" cx="${nn.x.toFixed(2)}" cy="${nn.y.toFixed(2)}" r="12" fill="rgba(255,255,255,0.85)"></circle>
-        <text class="nodeLabel" x="${nn.x.toFixed(2)}" y="${(nn.y + 34).toFixed(2)}" text-anchor="middle">${escapeHtml(nn.name)}</text>
+        <text class="nodeLabel" x="${nn.x.toFixed(2)}" y="${(nn.y + 34).toFixed(
+        2
+      )}" text-anchor="middle">${escapeHtml(nn.name)}</text>
       </g>
     `
     )
@@ -755,7 +867,14 @@ function setExpanded(id, expanded) {
   else TABLE_EXPANDED.delete(id);
 }
 
-function expandableRankingsTable({ id, title, rows, fmtFn, hintOn = "Click to expand", hintOff = "Click to collapse" }) {
+function expandableRankingsTable({
+  id,
+  title,
+  rows,
+  fmtFn,
+  hintOn = "Click to expand",
+  hintOff = "Click to collapse",
+}) {
   const expanded = isExpanded(id);
   const list = Array.isArray(rows) ? rows : [];
   const hasExtra = list.length > 10;
@@ -974,7 +1093,9 @@ async function renderHomeGdpPies() {
               <div class="homePlanetSubtitle">Error</div>
             </div>
             <div class="small">Couldn’t load GDP.</div>
-            <div class="small" style="margin-top:8px;"><strong>Error:</strong> ${escapeHtml(pl?.error || "Unknown error")}</div>
+            <div class="small" style="margin-top:8px;"><strong>Error:</strong> ${escapeHtml(
+              pl?.error || "Unknown error"
+            )}</div>
           </div>
         `;
       }
@@ -1099,7 +1220,7 @@ function buildTrendSvg({
   countries,
   seriesMap,
   focusedCountry,
-  valueFormatter, // NEW
+  valueFormatter,
   width = 940,
   height = 360,
 }) {
@@ -1113,13 +1234,12 @@ function buildTrendSvg({
   const yearsCount = Array.isArray(years) ? years.length : 0;
   if (yearsCount < 2) return `<div class="small">Not enough years to chart.</div>`;
 
-  // compute min/max first (needed for padding estimate)
   const { min, max, hasData } = computeMinMaxFromSeriesMap(seriesMap, countries, yearsCount);
   if (!hasData) return `<div class="small">No data yet for this indicator.</div>`;
 
-  // Dynamic left padding so Y-axis labels never clip
   const fmtY = typeof valueFormatter === "function" ? valueFormatter : (v) => fmtNum(v, 1);
 
+  // Dynamic left padding so Y-axis labels never clip
   const gridLabelLens = [];
   for (let g = 0; g <= 4; g++) {
     const t = g / 4;
@@ -1197,7 +1317,7 @@ function buildTrendSvg({
       />`;
   });
 
-  // If a country is focused, draw dots + value labels on its line
+  // If a country is focused, draw dots + value labels on its line (with edge-safe placement)
   let focusedPointLabels = "";
   if (focusedCountry) {
     const focusKey = normalizeId(focusedCountry);
@@ -1217,7 +1337,6 @@ function buildTrendSvg({
 
         const x = xForIdx(k);
         const y = yForVal(v);
-        const txt = fmtY(v);
 
         // dot
         dots.push(
@@ -1225,45 +1344,42 @@ function buildTrendSvg({
                    fill="${color}" stroke="rgba(0,0,0,0.35)" stroke-width="1" />`
         );
 
-   // label: keep inside chart bounds (flip near edges)
-   const txt = fmtY(v);
-   
-   // approximate pixel width of label text (good enough for clamping)
-   const approxCharW = 7;
-   const textW = Math.max(24, String(txt).length * approxCharW);
-   
-   const margin = 10;
-   
-   // if we're near the right edge, put label to the LEFT and right-align it
-   const nearRight = x > (W - padR - textW - margin);
-   const nearLeft = x < (padL + textW + margin);
-   const nearTop = y < (padT + 18);
-   
-   const dx = nearRight ? -8 : 8;
-   const dy = nearTop ? 14 : -10;
-   
-   // choose anchor so text grows inward
-   const anchor = nearRight ? "end" : "start";
-   
-   // clamp final x/y just in case
-   let lx = x + dx;
-   let ly = y + dy;
-   
-   lx = Math.max(padL + margin, Math.min(W - padR - margin, lx));
-   ly = Math.max(padT + margin, Math.min(H - padB - margin, ly));
-   
-   labels.push(
-     `<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}"
-            text-anchor="${anchor}"
-            font-size="12"
-            fill="rgba(255,255,255,0.92)"
-            stroke="rgba(0,0,0,0.55)"
-            stroke-width="3"
-            paint-order="stroke"
-            dominant-baseline="middle">
-        ${escapeHtml(txt)}
-      </text>`
-   );
+        // label: keep inside chart bounds (flip near edges)
+        const txt = fmtY(v);
+
+        // approximate pixel width of label text (good enough for clamping)
+        const approxCharW = 7;
+        const textW = Math.max(24, String(txt).length * approxCharW);
+
+        const margin = 10;
+
+        const nearRight = x > W - padR - textW - margin;
+        const nearTop = y < padT + 18;
+
+        const dx = nearRight ? -8 : 8;
+        const dy = nearTop ? 14 : -10;
+
+        const anchor = nearRight ? "end" : "start";
+
+        let lx = x + dx;
+        let ly = y + dy;
+
+        lx = Math.max(padL + margin, Math.min(W - padR - margin, lx));
+        ly = Math.max(padT + margin, Math.min(H - padB - margin, ly));
+
+        labels.push(
+          `<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}"
+                 text-anchor="${anchor}"
+                 font-size="12"
+                 fill="rgba(255,255,255,0.92)"
+                 stroke="rgba(0,0,0,0.55)"
+                 stroke-width="3"
+                 paint-order="stroke"
+                 dominant-baseline="middle">
+             ${escapeHtml(txt)}
+           </text>`
+        );
+      }
 
       focusedPointLabels = `
         <g class="trendPointLabels" pointer-events="none">
@@ -1274,7 +1390,6 @@ function buildTrendSvg({
     }
   }
 
-  // Dark chart: white-ish labels/grid
   const yLabels = gridLines
     .map(
       (g) => `
@@ -1501,7 +1616,9 @@ function renderApiStatusFail(err) {
       <h3 style="margin:0 0 6px 0;">Live data NOT connected ❌</h3>
       <div class="small">API_BASE:</div>
       <div class="small"><code>${escapeHtml(API_BASE)}</code></div>
-      <div class="small" style="margin-top:10px;"><strong>Error:</strong> ${escapeHtml(err?.message || String(err))}</div>
+      <div class="small" style="margin-top:10px;"><strong>Error:</strong> ${escapeHtml(
+        err?.message || String(err)
+      )}</div>
     </div>
   `;
 }
@@ -1512,7 +1629,9 @@ function planetHeader(planet, payload) {
       <div class="hstack" style="justify-content:space-between;">
         <div>
           <h2 class="heroTitle">${escapeHtml(planet.label)}</h2>
-          <div class="small">Live from API • ${escapeHtml(payload.yearTokenDisplay || "")} • ${escapeHtml(payload.yearSheet || "")}</div>
+          <div class="small">Live from API • ${escapeHtml(payload.yearTokenDisplay || "")} • ${escapeHtml(
+    payload.yearSheet || ""
+  )}</div>
         </div>
       </div>
     </section>
@@ -1691,13 +1810,19 @@ function attachResourcesHandlers(resPayload) {
 
     pieEl.innerHTML = `
       <div class="card" style="box-shadow:none; border:1px solid #eee;">
-        <h4 style="margin:0 0 10px 0; text-align:center;">${escapeHtml(resource)} holdings by country (labels show values)</h4>
+        <h4 style="margin:0 0 10px 0; text-align:center;">${escapeHtml(
+          resource
+        )} holdings by country (labels show values)</h4>
         <div style="display:flex; justify-content:center;">
           <svg style="display:block; max-width:100%; height:auto;"
                width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
                role="img" aria-label="Resource pie chart">
             ${slices.map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95"></path>`).join("")}
-            ${slices.map((s) => `<text x="${s.lx}" y="${s.ly}" font-size="12" text-anchor="middle">${escapeHtml(s.label)}</text>`).join("")}
+            ${slices
+              .map(
+                (s) => `<text x="${s.lx}" y="${s.ly}" font-size="12" text-anchor="middle">${escapeHtml(s.label)}</text>`
+              )
+              .join("")}
           </svg>
         </div>
       </div>
@@ -1739,9 +1864,9 @@ function viewCountriesList(planet, payload) {
       const pop = c?.indicators?.population;
 
       return `
-        <a class="countryListCard" href="#/country?planet=${encodeURIComponent(planet.id)}&country=${encodeURIComponent(
-          c.id || c.name
-        )}">
+        <a class="countryListCard" href="#/country?planet=${encodeURIComponent(
+          planet.id
+        )}&country=${encodeURIComponent(c.id || c.name)}">
           <div class="countryListHeader">
             <h4 class="countryListTitle">${escapeHtml(c?.name || "Unnamed Country")}</h4>
             <div class="countryListMeta">${escapeHtml(econ || "—")}</div>
@@ -1786,12 +1911,16 @@ function viewCountryProfile(planet, overviewPayload, tradePayload, resourcesPayl
     )
     .join("");
 
-  // Simple resource list (your resources page is the main viz)
   const resList =
     resources.length > 0
       ? `<ul>${resources
           .slice(0, 12)
-          .map((r) => `<li class="small">${escapeHtml(r.name)} — <strong>${escapeHtml(fmtNum(r.quantity, 0))}</strong></li>`)
+          .map(
+            (r) =>
+              `<li class="small">${escapeHtml(r.name)} — <strong>${escapeHtml(
+                fmtNum(r.quantity, 0)
+              )}</strong></li>`
+          )
           .join("")}</ul>`
       : `<div class="small">No resources listed.</div>`;
 
@@ -1852,7 +1981,9 @@ function viewCountryProfile(planet, overviewPayload, tradePayload, resourcesPayl
 ========================================================= */
 
 function viewLoading(msg) {
-  return `<section class="card"><h2 class="heroTitle">${escapeHtml(msg)}</h2><p class="small">Loading…</p></section>`;
+  return `<section class="card"><h2 class="heroTitle">${escapeHtml(
+    msg
+  )}</h2><p class="small">Loading…</p></section>`;
 }
 
 function viewError(err) {
@@ -1971,10 +2102,14 @@ async function render() {
           const items = tradePayload?.trade?.items || [];
 
           let metric = null;
-          if (key.endsWith(":frequency")) metric = { k: "frequency", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
-          if (key.endsWith(":volume")) metric = { k: "volume", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
-          if (key.endsWith(":exports")) metric = { k: "exportValue", fmt: (v) => fmtUsdB(v), absSize: false, absDisp: false };
-          if (key.endsWith(":imports")) metric = { k: "importValue", fmt: (v) => fmtUsdB(v), absSize: true, absDisp: true };
+          if (key.endsWith(":frequency"))
+            metric = { k: "frequency", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
+          if (key.endsWith(":volume"))
+            metric = { k: "volume", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
+          if (key.endsWith(":exports"))
+            metric = { k: "exportValue", fmt: (v) => fmtUsdB(v), absSize: false, absDisp: false };
+          if (key.endsWith(":imports"))
+            metric = { k: "importValue", fmt: (v) => fmtUsdB(v), absSize: true, absDisp: true };
           if (!metric) return;
 
           const pieData = buildTradePieData(items, metric.k, metric.fmt, metric.absSize, metric.absDisp);
