@@ -141,7 +141,7 @@ function tabStyle(isActive) {
     : "background:#111827;color:#e5e7eb;border:1px solid #374151;";
 }
 
-// Tabs order requested: Overview, Trends, Trade, Resources, Countries
+// Tabs order: Overview, Trends, Trade, Resources, Countries
 function setNav(planet = null, active = "overview") {
   const left = `
     <a class="siteTitle" href="#/" style="font-weight:800; letter-spacing:0.2px; text-decoration:none;">
@@ -263,7 +263,7 @@ function fmtNum(n, digits = 0) {
 }
 
 /* =========================================================
-   Country profile data helpers
+   Country profile helpers
 ========================================================= */
 
 function findCountryInPayload(payload, countryIdOrName) {
@@ -401,24 +401,8 @@ function buildCountryStatRows(country, overviewPayload, tradePayload) {
   }));
 }
 
-function buildCountryResourcesPie(resources) {
-  const data = (resources || [])
-    .map((r) => ({
-      name: String(r?.name || "").trim(),
-      value: Number(r?.quantity),
-      sortValue: Number(r?.quantity),
-      displayValueText: fmtNum(r?.quantity, 0),
-      share: Number(r?.share),
-    }))
-    .filter((r) => r.name && Number.isFinite(r.value) && r.value > 0)
-    .sort((a, b) => b.value - a.value);
-
-  const total = data.reduce((s, d) => s + d.value, 0);
-  return { data, total };
-}
-
 /* =========================================================
-   Generic Pie (SVG) + tooltip (country + value)
+   Generic Pie (SVG) + tooltip (home + trade + modal)
 ========================================================= */
 
 function pieColorForIndex(i, n) {
@@ -469,9 +453,7 @@ function attachPieTooltipHandlers(container) {
 }
 
 function pieSvgHtml({ data, total, size, ariaLabel }) {
-  if (!Array.isArray(data) || !data.length || !(total > 0)) {
-    return `<div class="small">No data.</div>`;
-  }
+  if (!Array.isArray(data) || !data.length || !(total > 0)) return `<div class="small">No data.</div>`;
 
   const W = size === "large" ? 720 : 420;
   const H = size === "large" ? 520 : 320;
@@ -535,11 +517,7 @@ function legendTableHtml(data) {
     })
     .join("");
 
-  return `
-    <table class="legendTable">
-      <tbody>${rows}</tbody>
-    </table>
-  `;
+  return `<table class="legendTable"><tbody>${rows}</tbody></table>`;
 }
 
 /* =========================================================
@@ -548,10 +526,7 @@ function legendTableHtml(data) {
 
 function legendHtml() {
   const items = Object.entries(RELATIONSHIP_STYLES)
-    .map(
-      ([, v]) =>
-        `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`
-    )
+    .map(([_, v]) => `<div class="legendItem"><span class="legendSwatch" style="background:${v.color}"></span>${v.label}</div>`)
     .join("");
   return `<div class="graphLegendWrap"><div class="graphLegend">${items}</div></div>`;
 }
@@ -604,10 +579,10 @@ function diplomacyWebSvgFromEdges(countries, edges) {
       const tipAttr = tip ? `data-tip="${escapeHtml(tip)}"` : "";
 
       return `<line class="dipEdge" ${tipAttr}
-      data-aid="${escapeHtml(e.aId)}" data-bid="${escapeHtml(e.bId)}"
-      x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
-      x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
-      stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
+        data-aid="${escapeHtml(e.aId)}" data-bid="${escapeHtml(e.bId)}"
+        x1="${A.x.toFixed(2)}" y1="${A.y.toFixed(2)}"
+        x2="${B.x.toFixed(2)}" y2="${B.y.toFixed(2)}"
+        stroke="${style.color}" stroke-width="3" opacity="0.85" />`;
     })
     .join("");
 
@@ -730,7 +705,7 @@ function attachDiplomacyFocusHandlers() {
 }
 
 /* =========================================================
-   Expandable tables WITHOUT page refresh
+   Expandable tables (rankings)
 ========================================================= */
 
 const TABLE_EXPANDED = new Set();
@@ -744,14 +719,7 @@ function setExpanded(id, expanded) {
   else TABLE_EXPANDED.delete(id);
 }
 
-function expandableRankingsTable({
-  id,
-  title,
-  rows,
-  fmtFn,
-  hintOn = "Click to expand",
-  hintOff = "Click to collapse",
-}) {
+function expandableRankingsTable({ id, title, rows, fmtFn, hintOn = "Click to expand", hintOff = "Click to collapse" }) {
   const expanded = isExpanded(id);
   const list = Array.isArray(rows) ? rows : [];
   const hasExtra = list.length > 10;
@@ -777,9 +745,8 @@ function expandableRankingsTable({
   const hintText = !hasExtra ? "" : expanded ? hintOff : hintOn;
 
   return `
-    <div class="card expTable ${expanded ? "expanded" : ""}" data-exp="${escapeHtml(
-      id
-    )}" data-hinton="${escapeHtml(hintOn)}" data-hintoff="${escapeHtml(hintOff)}"
+    <div class="card expTable ${expanded ? "expanded" : ""}" data-exp="${escapeHtml(id)}"
+      data-hinton="${escapeHtml(hintOn)}" data-hintoff="${escapeHtml(hintOff)}"
       style="box-shadow:none; border:1px solid #eee; ${hasExtra ? "cursor:pointer;" : ""}">
       <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
         <h4 style="margin:0 0 10px 0;">${escapeHtml(title)}</h4>
@@ -1099,28 +1066,30 @@ function buildTrendSvg({
   width = 940,
   height = 360,
 }) {
+  const padR = 16;
+  const padT = 18;
+  const padB = 42;
+
   const W = width;
   const H = height;
 
   const yearsCount = Array.isArray(years) ? years.length : 0;
   if (yearsCount < 2) return `<div class="small">Not enough years to chart.</div>`;
 
-  // Compute min/max first (needed for dynamic left padding)
+  // compute min/max first (needed for padding estimate)
   const { min, max, hasData } = computeMinMaxFromSeriesMap(seriesMap, countries, yearsCount);
   if (!hasData) return `<div class="small">No data yet for this indicator.</div>`;
 
-  // --- Dynamic left padding so Y-axis labels never get clipped ---
+  // Dynamic left padding so Y-axis labels never clip
+  const sampleGridLabel = (v) => fmtNum(v, 1);
   const gridLabelLens = [];
   for (let g = 0; g <= 4; g++) {
     const t = g / 4;
     const val = min + t * (max - min);
-    gridLabelLens.push(fmtNum(val, 1).length);
+    gridLabelLens.push(sampleGridLabel(val).length);
   }
   const maxLabelLen = Math.max(...gridLabelLens, 4);
   const padL = Math.min(140, Math.max(54, 18 + maxLabelLen * 7));
-  const padR = 16;
-  const padT = 18;
-  const padB = 42;
 
   const x0 = padL;
   const x1 = W - padR;
@@ -1129,8 +1098,8 @@ function buildTrendSvg({
 
   const xForIdx = (i) => x0 + (i * (x1 - x0)) / (yearsCount - 1);
   const yForVal = (v) => {
-    const tt = (v - min) / (max - min);
-    return y0 - tt * (y0 - y1);
+    const t = (v - min) / (max - min);
+    return y0 - t * (y0 - y1);
   };
 
   // gridlines: 4 horizontal
@@ -1192,13 +1161,13 @@ function buildTrendSvg({
 
   // Dark chart: white-ish labels/grid
   const yLabels = gridLines
-    .map((g) => {
-      return `
+    .map(
+      (g) => `
         <text x="${padL - 12}" y="${g.y.toFixed(2)}" text-anchor="end" dominant-baseline="middle"
               font-size="12" fill="rgba(255,255,255,0.75)">
           ${escapeHtml(fmtNum(g.val, 1))}
-        </text>`;
-    })
+        </text>`
+    )
     .join("");
 
   const grid = gridLines
@@ -1215,17 +1184,17 @@ function buildTrendSvg({
   `;
 
   const xTickHtml = xTicks
-    .map((t) => {
-      return `
+    .map(
+      (t) => `
         <line x1="${t.x.toFixed(2)}" y1="${y0}" x2="${t.x.toFixed(2)}" y2="${y0 + 6}"
               stroke="rgba(255,255,255,0.22)" stroke-width="1" />
         <text x="${t.x.toFixed(2)}" y="${y0 + 22}" text-anchor="middle"
               font-size="12" fill="rgba(255,255,255,0.80)">${escapeHtml(t.label)}</text>
-      `;
-    })
+      `
+    )
     .join("");
 
-  // Legend list (left side): black text; smaller font like original "below-chart" chips
+  // Legend list (left side): black text, smaller font
   const legendItems = countries
     .map((c, i) => {
       const color = trendColorForIndex(i, countries.length);
@@ -1258,7 +1227,6 @@ function buildTrendSvg({
       </div>
 
       <div style="display:flex; gap:12px; align-items:stretch;">
-        <!-- LEFT: country buttons -->
         <div class="trendLegend"
              style="width:220px; max-width:220px; border:1px solid #eee; border-radius:12px;
                     padding:8px; background:#fafafa; overflow:auto; max-height:${H}px;">
@@ -1268,7 +1236,6 @@ function buildTrendSvg({
           </div>
         </div>
 
-        <!-- RIGHT: chart (BLACK background) -->
         <div style="flex:1; overflow:auto;">
           <svg class="trendSvg" data-ind="${escapeHtml(indicatorKey)}"
                width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
@@ -1375,108 +1342,7 @@ function attachTrendHandlers(trendsPayload, planet) {
 }
 
 /* =========================================================
-   Resources (handlers)
-========================================================= */
-
-function attachResourcesHandlers(resPayload) {
-  const sel = document.getElementById("resSelect");
-  const totalsEl = document.getElementById("resTotals");
-  const pieEl = document.getElementById("resPie");
-  const legendEl = document.getElementById("resLegend");
-  if (!sel || !totalsEl || !pieEl || !legendEl) return;
-
-  const worldTotals = resPayload?.resources?.worldTotals || [];
-  const breakdownByResource = resPayload?.resources?.breakdownByResource || {};
-  const totalMap = new Map(worldTotals.map((x) => [x.resource, x.total]));
-
-  function render(resource) {
-    const total = totalMap.get(resource);
-    totalsEl.innerHTML = `World total: <strong>${fmtNum(total, 0)}</strong>`;
-
-    const breakdown = breakdownByResource[resource] || [];
-    const data = (breakdown || [])
-      .map((x) => ({ name: String(x.name || ""), value: Number(x.value) }))
-      .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0)
-      .sort((a, b) => b.value - a.value);
-
-    const totalRes = data.reduce((s, x) => s + x.value, 0);
-    if (!data.length || totalRes <= 0) {
-      pieEl.innerHTML = `<div class="small">No countries possess this resource (or all values are 0).</div>`;
-      legendEl.innerHTML = "";
-      return;
-    }
-
-    const W = 720;
-    const H = 480;
-    const cx = W / 2;
-    const cy = H / 2;
-    const r = 185;
-    let start = -Math.PI / 2;
-
-    const slices = data.map((d, i) => {
-      const ang = (d.value / totalRes) * Math.PI * 2;
-      const end = start + ang;
-
-      const x1 = cx + r * Math.cos(start);
-      const y1 = cy + r * Math.sin(start);
-      const x2 = cx + r * Math.cos(end);
-      const y2 = cy + r * Math.sin(end);
-      const large = ang > Math.PI ? 1 : 0;
-
-      const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
-
-      const mid = (start + end) / 2;
-      const lx = cx + (r + 34) * Math.cos(mid);
-      const ly = cy + (r + 34) * Math.sin(mid);
-      const label = `${d.name}: ${fmtNum(d.value, 0)}`;
-
-      const color = pieColorForIndex(i, data.length);
-
-      start = end;
-      return { path, color, lx, ly, label };
-    });
-
-    pieEl.innerHTML = `
-      <div class="card" style="box-shadow:none; border:1px solid #eee;">
-        <h4 style="margin:0 0 10px 0; text-align:center;">${escapeHtml(resource)} holdings by country (labels show values)</h4>
-        <div style="display:flex; justify-content:center;">
-          <svg style="display:block; max-width:100%; height:auto;"
-               width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
-               role="img" aria-label="Resource pie chart">
-            ${slices.map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95"></path>`).join("")}
-            ${slices.map((s) => `<text x="${s.lx}" y="${s.ly}" font-size="12" text-anchor="middle">${escapeHtml(s.label)}</text>`).join("")}
-          </svg>
-        </div>
-      </div>
-    `;
-
-    const legendRows = data
-      .map((d, i) => {
-        const color = pieColorForIndex(i, data.length);
-        return `
-          <tr>
-            <td class="legendSwatchCell"><span class="legendSwatchBox" style="background:${color};"></span></td>
-            <td class="legendName">${escapeHtml(d.name)}</td>
-            <td class="legendVal">${escapeHtml(fmtNum(d.value, 0))}</td>
-          </tr>
-        `;
-      })
-      .join("");
-
-    legendEl.innerHTML = `
-      <div class="legendCard">
-        <h4 class="legendTitle">Legend</h4>
-        <table class="legendTable"><tbody>${legendRows}</tbody></table>
-      </div>
-    `;
-  }
-
-  render(sel.value);
-  sel.addEventListener("change", () => render(sel.value));
-}
-
-/* =========================================================
-   Views
+   Views (pages)
 ========================================================= */
 
 function viewChoosePlanetSkeleton() {
@@ -1518,9 +1384,7 @@ function renderApiStatusFail(err) {
       <h3 style="margin:0 0 6px 0;">Live data NOT connected ❌</h3>
       <div class="small">API_BASE:</div>
       <div class="small"><code>${escapeHtml(API_BASE)}</code></div>
-      <div class="small" style="margin-top:10px;"><strong>Error:</strong> ${escapeHtml(
-        err?.message || String(err)
-      )}</div>
+      <div class="small" style="margin-top:10px;"><strong>Error:</strong> ${escapeHtml(err?.message || String(err))}</div>
     </div>
   `;
 }
@@ -1531,9 +1395,7 @@ function planetHeader(planet, payload) {
       <div class="hstack" style="justify-content:space-between;">
         <div>
           <h2 class="heroTitle">${escapeHtml(planet.label)}</h2>
-          <div class="small">Live from API • ${escapeHtml(payload.yearTokenDisplay || "")} • ${escapeHtml(
-    payload.yearSheet || ""
-  )}</div>
+          <div class="small">Live from API • ${escapeHtml(payload.yearTokenDisplay || "")} • ${escapeHtml(payload.yearSheet || "")}</div>
         </div>
       </div>
     </section>
@@ -1652,6 +1514,103 @@ function viewResources(planet, resPayload) {
   `;
 }
 
+function attachResourcesHandlers(resPayload) {
+  const sel = document.getElementById("resSelect");
+  const totalsEl = document.getElementById("resTotals");
+  const pieEl = document.getElementById("resPie");
+  const legendEl = document.getElementById("resLegend");
+  if (!sel || !totalsEl || !pieEl || !legendEl) return;
+
+  const worldTotals = resPayload?.resources?.worldTotals || [];
+  const breakdownByResource = resPayload?.resources?.breakdownByResource || {};
+  const totalMap = new Map(worldTotals.map((x) => [x.resource, x.total]));
+
+  function render(resource) {
+    const total = totalMap.get(resource);
+    totalsEl.innerHTML = `World total: <strong>${fmtNum(total, 0)}</strong>`;
+
+    const breakdown = breakdownByResource[resource] || [];
+    const data = (breakdown || [])
+      .map((x) => ({ name: String(x.name || ""), value: Number(x.value) }))
+      .filter((x) => x.name && Number.isFinite(x.value) && x.value > 0)
+      .sort((a, b) => b.value - a.value);
+
+    const totalRes = data.reduce((s, x) => s + x.value, 0);
+    if (!data.length || totalRes <= 0) {
+      pieEl.innerHTML = `<div class="small">No countries possess this resource (or all values are 0).</div>`;
+      legendEl.innerHTML = "";
+      return;
+    }
+
+    const W = 720;
+    const H = 480;
+    const cx = W / 2;
+    const cy = H / 2;
+    const r = 185;
+    let start = -Math.PI / 2;
+
+    const slices = data.map((d, i) => {
+      const ang = (d.value / totalRes) * Math.PI * 2;
+      const end = start + ang;
+
+      const x1 = cx + r * Math.cos(start);
+      const y1 = cy + r * Math.sin(start);
+      const x2 = cx + r * Math.cos(end);
+      const y2 = cy + r * Math.sin(end);
+      const large = ang > Math.PI ? 1 : 0;
+
+      const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+
+      const mid = (start + end) / 2;
+      const lx = cx + (r + 34) * Math.cos(mid);
+      const ly = cy + (r + 34) * Math.sin(mid);
+      const label = `${d.name}: ${fmtNum(d.value, 0)}`;
+
+      const color = pieColorForIndex(i, data.length);
+
+      start = end;
+      return { path, color, lx, ly, label };
+    });
+
+    pieEl.innerHTML = `
+      <div class="card" style="box-shadow:none; border:1px solid #eee;">
+        <h4 style="margin:0 0 10px 0; text-align:center;">${escapeHtml(resource)} holdings by country (labels show values)</h4>
+        <div style="display:flex; justify-content:center;">
+          <svg style="display:block; max-width:100%; height:auto;"
+               width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
+               role="img" aria-label="Resource pie chart">
+            ${slices.map((s) => `<path d="${s.path}" fill="${s.color}" opacity="0.95"></path>`).join("")}
+            ${slices.map((s) => `<text x="${s.lx}" y="${s.ly}" font-size="12" text-anchor="middle">${escapeHtml(s.label)}</text>`).join("")}
+          </svg>
+        </div>
+      </div>
+    `;
+
+    const legendRows = data
+      .map((d, i) => {
+        const color = pieColorForIndex(i, data.length);
+        return `
+          <tr>
+            <td class="legendSwatchCell"><span class="legendSwatchBox" style="background:${color};"></span></td>
+            <td class="legendName">${escapeHtml(d.name)}</td>
+            <td class="legendVal">${escapeHtml(fmtNum(d.value, 0))}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    legendEl.innerHTML = `
+      <div class="legendCard">
+        <h4 class="legendTitle">Legend</h4>
+        <table class="legendTable"><tbody>${legendRows}</tbody></table>
+      </div>
+    `;
+  }
+
+  render(sel.value);
+  sel.addEventListener("change", () => render(sel.value));
+}
+
 function viewCountriesList(planet, payload) {
   const countries = Array.isArray(payload?.countries) ? [...payload.countries] : [];
   countries.sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || "")));
@@ -1697,38 +1656,6 @@ function viewCountryProfile(planet, overviewPayload, tradePayload, resourcesPayl
   const economicSystem = getCountryEconomicSystem(country, overviewPayload);
   const stats = buildCountryStatRows(country, overviewPayload, tradePayload);
   const resources = getCountryResourcesFromPayload(resourcesPayload, country);
-  const { data, total } = buildCountryResourcesPie(resources);
-
-  const pieHtml = pieSvgHtml({
-    data,
-    total,
-    size: "small",
-    ariaLabel: `${country?.name || "Country"} resources`,
-  });
-
-  const resourcesLegend =
-    resources.length > 0
-      ? `
-      <table class="legendTable">
-        <tbody>
-          ${resources
-            .map(
-              (r, i, arr) => `
-              <tr>
-                <td class="legendSwatchCell"><span class="legendSwatchBox" style="background:${pieColorForIndex(
-                  i,
-                  arr.length
-                )};"></span></td>
-                <td class="legendName">${escapeHtml(r?.name || "—")}</td>
-                <td class="legendVal">${escapeHtml(fmtNum(r?.quantity, 0))}</td>
-              </tr>
-            `
-            )
-            .join("")}
-        </tbody>
-      </table>
-    `
-      : `<div class="small">No resources listed.</div>`;
 
   const statRowsHtml = stats
     .map(
@@ -1741,6 +1668,15 @@ function viewCountryProfile(planet, overviewPayload, tradePayload, resourcesPayl
     `
     )
     .join("");
+
+  // Simple resource list (your resources page is the main viz)
+  const resList =
+    resources.length > 0
+      ? `<ul>${resources
+          .slice(0, 12)
+          .map((r) => `<li class="small">${escapeHtml(r.name)} — <strong>${escapeHtml(fmtNum(r.quantity, 0))}</strong></li>`)
+          .join("")}</ul>`
+      : `<div class="small">No resources listed.</div>`;
 
   return `
     ${planetHeader(planet, overviewPayload)}
@@ -1771,11 +1707,8 @@ function viewCountryProfile(planet, overviewPayload, tradePayload, resourcesPayl
     </section>
 
     <section class="card">
-      <h3 class="sectionTitle">Resource Breakdown</h3>
-      <div class="chartRow">
-        <div class="chartPieBox">${pieHtml}</div>
-        <div class="chartLegendBox">${resourcesLegend}</div>
-      </div>
+      <h3 class="sectionTitle">Top Resources</h3>
+      ${resList}
     </section>
 
     <section class="card">
@@ -1796,6 +1729,10 @@ function viewCountryProfile(planet, overviewPayload, tradePayload, resourcesPayl
     </section>
   `;
 }
+
+/* =========================================================
+   Loading / error
+========================================================= */
 
 function viewLoading(msg) {
   return `<section class="card"><h2 class="heroTitle">${escapeHtml(msg)}</h2><p class="small">Loading…</p></section>`;
@@ -1880,6 +1817,7 @@ async function render() {
     const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
     setNav(planet, "trade");
     app.innerHTML = viewLoading(`Loading Trade • ${planet.label}`);
+
     try {
       const [overviewPayload, tradePayload] = await Promise.all([
         fetchPlanetOverview(planet.id),
@@ -1916,14 +1854,10 @@ async function render() {
           const items = tradePayload?.trade?.items || [];
 
           let metric = null;
-          if (key.endsWith(":frequency"))
-            metric = { k: "frequency", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
-          if (key.endsWith(":volume"))
-            metric = { k: "volume", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
-          if (key.endsWith(":exports"))
-            metric = { k: "exportValue", fmt: (v) => fmtUsdB(v), absSize: false, absDisp: false };
-          if (key.endsWith(":imports"))
-            metric = { k: "importValue", fmt: (v) => fmtUsdB(v), absSize: true, absDisp: true };
+          if (key.endsWith(":frequency")) metric = { k: "frequency", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
+          if (key.endsWith(":volume")) metric = { k: "volume", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
+          if (key.endsWith(":exports")) metric = { k: "exportValue", fmt: (v) => fmtUsdB(v), absSize: false, absDisp: false };
+          if (key.endsWith(":imports")) metric = { k: "importValue", fmt: (v) => fmtUsdB(v), absSize: true, absDisp: true };
           if (!metric) return;
 
           const pieData = buildTradePieData(items, metric.k, metric.fmt, metric.absSize, metric.absDisp);
@@ -1937,4 +1871,91 @@ async function render() {
 
           const legendHtml = `
             <div class="legendCard">
-              <h4 class="legendTitle">
+              <h4 class="legendTitle">All countries</h4>
+              ${legendTableHtml(pieData.data)}
+            </div>
+          `;
+
+          showModal({ key, title, subtitle, pieHtml: pieLarge, legendHtml });
+
+          const modalPie = document.getElementById("pieModalPie");
+          attachPieTooltipHandlers(modalPie);
+        });
+      });
+    } catch (err) {
+      console.error(err);
+      app.innerHTML = viewError(err);
+    }
+    return;
+  }
+
+  if (path === "/resources") {
+    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
+    setNav(planet, "resources");
+    app.innerHTML = viewLoading(`Loading Resources • ${planet.label}`);
+
+    try {
+      const resPayload = await fetchPlanetResources(planet.id);
+      if (!resPayload?.ok) throw new Error(resPayload?.error || "Resources ok=false");
+
+      app.innerHTML = viewResources(planet, resPayload);
+      attachResourcesHandlers(resPayload);
+    } catch (err) {
+      console.error(err);
+      app.innerHTML = viewError(err);
+    }
+    return;
+  }
+
+  if (path === "/countries") {
+    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
+    setNav(planet, "countries");
+    app.innerHTML = viewLoading(`Loading Countries • ${planet.label}`);
+
+    try {
+      const payload = await fetchPlanetOverview(planet.id);
+      if (!payload?.ok) throw new Error(payload?.error || "API returned ok=false");
+
+      app.innerHTML = viewCountriesList(planet, payload);
+    } catch (err) {
+      console.error(err);
+      app.innerHTML = viewError(err);
+    }
+    return;
+  }
+
+  if (path === "/country") {
+    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
+    const countryKey = params.get("country");
+
+    setNav(planet, "countries");
+    app.innerHTML = viewLoading(`Loading Country • ${planet.label}`);
+
+    try {
+      const [overviewPayload, tradePayload, resourcesPayload] = await Promise.all([
+        fetchPlanetOverview(planet.id),
+        fetchPlanetTrade(planet.id),
+        fetchPlanetResources(planet.id),
+      ]);
+
+      if (!overviewPayload?.ok) throw new Error(overviewPayload?.error || "Overview ok=false");
+      if (!tradePayload?.ok) throw new Error(tradePayload?.error || "Trade ok=false");
+      if (!resourcesPayload?.ok) throw new Error(resourcesPayload?.error || "Resources ok=false");
+
+      const country = findCountryInPayload(overviewPayload, countryKey);
+      if (!country) throw new Error(`Country not found: ${countryKey || "unknown"}`);
+
+      app.innerHTML = viewCountryProfile(planet, overviewPayload, tradePayload, resourcesPayload, country);
+    } catch (err) {
+      console.error(err);
+      app.innerHTML = viewError(err);
+    }
+    return;
+  }
+
+  setNav(null);
+  app.innerHTML = viewChoosePlanetSkeleton();
+}
+
+window.addEventListener("hashchange", () => render());
+render();
