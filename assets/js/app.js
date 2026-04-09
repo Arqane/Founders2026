@@ -1,5 +1,10 @@
 // assets/js/app.js
-// Updated: 2026-04-09 (Add FOREX chart + exchange calculator on Trade page)
+// Updated: 2026-04-09
+// Changes:
+//  - Trade page: remove diplomacy web; reorder sections (Trade Charts → Forex → FX Calculator → Trade Overview)
+//  - Forex chart: label corrected (domestic currency per $1 USD)
+//  - Forex chart: remove $ from Y-axis; when focused, show value + currency name on point labels
+//  - FX calculator math updated for "domestic currency per $1 USD" convention
 
 import { API_BASE, PLANETS, RELATIONSHIP_STYLES } from "./config.js";
 
@@ -102,9 +107,9 @@ function ensureOneModalExists() {
   `;
   document.body.appendChild(overlay);
 
-  document
-    .getElementById("pieModalClose")
-    .addEventListener("click", () => hideModal());
+  document.getElementById("pieModalClose").addEventListener("click", () =>
+    hideModal()
+  );
 
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) hideModal();
@@ -287,15 +292,14 @@ function fmtNum(n, digits = 0) {
   return v.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
-// Forex value formatter (USD per 1 unit), show more precision
-function fmtUsdPerUnit(n) {
+// Forex axis/value formatter: NO "$" (values are domestic currency per $1 USD)
+function fmtFxAxis(n) {
   if (n === null || n === undefined || n === "") return "—";
   const v = Number(n);
   if (!Number.isFinite(v)) return "—";
-  // Adaptive precision: small values get more digits
   const abs = Math.abs(v);
-  const digits = abs >= 1 ? 3 : abs >= 0.1 ? 4 : 6;
-  return `$${v.toLocaleString(undefined, { maximumFractionDigits: digits })}`;
+  const digits = abs >= 100 ? 1 : abs >= 10 ? 2 : abs >= 1 ? 3 : 6;
+  return v.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
 function fmtFxRate(n) {
@@ -686,7 +690,7 @@ function legendTableHtml(data) {
 }
 
 /* =========================================================
-   Diplomacy Web
+   Diplomacy Web (used on Overview only now)
 ========================================================= */
 
 function legendHtml() {
@@ -1209,7 +1213,7 @@ async function renderHomeGdpPies() {
 }
 
 /* =========================================================
-   Trends (SVG line charts)
+   Trends + Forex (SVG line charts)
 ========================================================= */
 
 function trendColorForIndex(i, n) {
@@ -1243,6 +1247,7 @@ function buildTrendSvg({
   seriesMap,
   focusedCountry,
   valueFormatter,
+  pointLabelFormatter, // (countryName, value) => string
   width = 940,
   height = 360,
 }) {
@@ -1360,16 +1365,16 @@ function buildTrendSvg({
         const x = xForIdx(k);
         const y = yForVal(v);
 
-        // dot
         dots.push(
           `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="4.2"
                    fill="${color}" stroke="rgba(0,0,0,0.35)" stroke-width="1" />`
         );
 
-        // label: keep inside chart bounds (flip near edges)
-        const txt = fmtY(v);
+        const txt =
+          typeof pointLabelFormatter === "function"
+            ? pointLabelFormatter(focusName, v)
+            : fmtY(v);
 
-        // approximate pixel width of label text (good enough for clamping)
         const approxCharW = 7;
         const textW = Math.max(24, String(txt).length * approxCharW);
 
@@ -1596,11 +1601,10 @@ function attachTrendHandlers(trendsPayload, planet) {
 }
 
 /* =========================================================
-   NEW: Forex chart + calculator (Trade page)
+   Forex chart + calculator (Trade page)
 ========================================================= */
 
 function getForexFromTradePayload(tradePayload) {
-  // Apps Script returns forex at tradePayload.forex when ok
   const fx = tradePayload?.forex || null;
   const items = Array.isArray(fx?.items) ? fx.items : [];
   const currencies = Array.isArray(fx?.currencies) ? fx.currencies : [];
@@ -1611,26 +1615,32 @@ function getForexFromTradePayload(tradePayload) {
 function buildForexSeriesMap(items) {
   const seriesMap = {};
   const countries = [];
+  const currencyNameByCountry = {}; // countryName -> currencyName
+
   (items || []).forEach((it) => {
     const name = String(it?.name || "").trim();
     const series = Array.isArray(it?.series) ? it.series : [];
+    const currencyName = String(it?.currencyName || "").trim();
+
     if (!name) return;
     countries.push(name);
     seriesMap[name] = series.map((v) => {
       const n = Number(v);
       return Number.isFinite(n) ? n : null;
     });
+    if (currencyName) currencyNameByCountry[name] = currencyName;
   });
+
   countries.sort((a, b) => String(a).localeCompare(String(b)));
-  return { countries, seriesMap };
+  return { countries, seriesMap, currencyNameByCountry };
 }
 
-function viewForexSection(tradePayload) {
+function viewForexChartSection(tradePayload) {
   const yNum = Number(tradePayload?.year);
   const currentYear = Number.isFinite(yNum) ? Math.max(1, Math.min(6, yNum)) : 1;
   const years = Array.from({ length: currentYear }, (_, i) => i + 1);
 
-  const { fx, items, currencies } = getForexFromTradePayload(tradePayload);
+  const { fx, items } = getForexFromTradePayload(tradePayload);
 
   if (!fx) {
     const err = tradePayload?.forexError ? String(tradePayload.forexError) : "";
@@ -1655,30 +1665,29 @@ function viewForexSection(tradePayload) {
   const focused = app?.dataset?.fxFocus || "";
   const yLabel = `Year 1 → Year ${currentYear}`;
 
-  const { countries, seriesMap } = buildForexSeriesMap(items);
+  const { countries, seriesMap, currencyNameByCountry } = buildForexSeriesMap(items);
 
   const chartHtml = buildTrendSvg({
-    indicatorKey: "forex-usd-per-unit",
-    title: "Currency Value vs USD (USD per 1 unit)",
+    indicatorKey: "forex-dom-per-usd",
+    title: "Domestic Currency per $1 USD",
     years,
     countries,
     seriesMap,
     focusedCountry: focused,
-    valueFormatter: fmtUsdPerUnit,
+    valueFormatter: fmtFxAxis, // NO $
+    pointLabelFormatter: (countryName, v) => {
+      const cur = currencyNameByCountry[countryName] || "currency";
+      return `${fmtFxAxis(v)} ${cur}`;
+    },
     width: 940,
     height: 360,
   });
-
-  // Calculator options
-  const opts = currencies
-    .map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.label)}</option>`)
-    .join("");
 
   return `
     <section class="card">
       <h3 class="sectionTitle">Foreign Exchange</h3>
       <div class="small">
-        ${escapeHtml(yLabel)} • Click a country to highlight its currency value trend.
+        ${escapeHtml(yLabel)} • Values shown are <strong>domestic currency per $1 USD</strong>.
       </div>
 
       <div class="small" style="margin-top:8px;">
@@ -1694,10 +1703,35 @@ function viewForexSection(tradePayload) {
         ${chartHtml}
       </div>
     </section>
+  `;
+}
 
+function viewFxCalculatorSection(tradePayload) {
+  const yNum = Number(tradePayload?.year);
+  const currentYear = Number.isFinite(yNum) ? Math.max(1, Math.min(6, yNum)) : 1;
+
+  const { fx, currencies } = getForexFromTradePayload(tradePayload);
+
+  if (!fx || !currencies.length) {
+    return `
+      <section class="card">
+        <h3 class="sectionTitle">Exchange Rate Calculator</h3>
+        <div class="small">Forex data is not available yet for this planet.</div>
+      </section>
+    `;
+  }
+
+  const opts = currencies
+    .map((c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.label)}</option>`)
+    .join("");
+
+  return `
     <section class="card">
       <h3 class="sectionTitle">Exchange Rate Calculator</h3>
-      <div class="small">Uses the <strong>current year</strong> forex values for this planet.</div>
+      <div class="small">
+        Uses the <strong>current year</strong> values (Year ${escapeHtml(String(currentYear))}) and the convention:
+        <strong>domestic currency per $1 USD</strong>.
+      </div>
 
       <div class="hstack" style="gap:12px; align-items:center; margin-top:12px; flex-wrap:wrap;">
         <div class="small"><strong>Convert:</strong></div>
@@ -1726,43 +1760,64 @@ function viewForexSection(tradePayload) {
   `;
 }
 
-function attachForexHandlers(tradePayload) {
+function attachForexHandlers(tradePayload, planet) {
   if (!app) return;
 
   const { fx, currencyMap } = getForexFromTradePayload(tradePayload);
   if (!fx) return;
 
+  function rerenderTradeFromCache() {
+    const cached = app.dataset.tradePayloadJson;
+    if (!cached) return;
+    let tp = null;
+    try {
+      tp = JSON.parse(cached);
+    } catch {
+      return;
+    }
+    app.innerHTML = viewTrade(planet, tp);
+
+    attachExpandableTableHandlers();
+    document.querySelectorAll(".chartCard").forEach((card) => attachPieTooltipHandlers(card));
+    bindTradePieModalHandlers(tp, planet);
+
+    // Forex handlers again after rerender
+    attachForexHandlers(tp, planet);
+  }
+
   function setFxFocus(countryNameOrBlank) {
     app.dataset.fxFocus = countryNameOrBlank ? String(countryNameOrBlank) : "";
-    // Re-render ONLY the trade page content (we are on trade route)
-    // The router will rebind handlers after we call renderTradeView_ below.
-    renderTradeView_(tradePayload);
+    rerenderTradeFromCache();
   }
 
   const clearBtn = document.getElementById("fxClearBtn");
   if (clearBtn) clearBtn.addEventListener("click", () => setFxFocus(""));
 
-  // Note: buildTrendSvg uses .trendLine + .trendLegendItem
-  // Since Trade page also contains pies, this selector is safe:
-  document.querySelectorAll(".trendSvg[data-ind='forex-usd-per-unit'] .trendLine[data-country]").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      e.preventDefault();
-      const c = el.getAttribute("data-country") || "";
-      const now = normalizeId(app.dataset.fxFocus || "");
-      const next = now && normalizeId(c) === now ? "" : c;
-      setFxFocus(next);
+  // Forex chart line clicks
+  document
+    .querySelectorAll(".trendSvg[data-ind='forex-dom-per-usd'] .trendLine[data-country]")
+    .forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
+        const c = el.getAttribute("data-country") || "";
+        const now = normalizeId(app.dataset.fxFocus || "");
+        const next = now && normalizeId(c) === now ? "" : c;
+        setFxFocus(next);
+      });
     });
-  });
 
-  document.querySelectorAll(".trendLegendItem[data-ind='forex-usd-per-unit'][data-country]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      const c = btn.getAttribute("data-country") || "";
-      const now = normalizeId(app.dataset.fxFocus || "");
-      const next = now && normalizeId(c) === now ? "" : c;
-      setFxFocus(next);
+  // Forex legend button clicks
+  document
+    .querySelectorAll(".trendLegendItem[data-ind='forex-dom-per-usd'][data-country]")
+    .forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        const c = btn.getAttribute("data-country") || "";
+        const now = normalizeId(app.dataset.fxFocus || "");
+        const next = now && normalizeId(c) === now ? "" : c;
+        setFxFocus(next);
+      });
     });
-  });
 
   // Calculator
   const fromSel = document.getElementById("fxFrom");
@@ -1771,13 +1826,20 @@ function attachForexHandlers(tradePayload) {
   const out = document.getElementById("fxResult");
   if (!fromSel || !toSel || !out) return;
 
+  /**
+   * Convention:
+   *  vX = domestic currency per $1 USD for currency X (from sheet)
+   * Then:
+   *  1 X = (1 / vX) USD
+   *  so 1 X = (vY / vX) Y
+   */
   function computeRate(fromId, toId) {
     const A = currencyMap?.[fromId];
     const B = currencyMap?.[toId];
-    const aUsd = Number(A?.usdPerUnit);
-    const bUsd = Number(B?.usdPerUnit);
-    if (!Number.isFinite(aUsd) || !Number.isFinite(bUsd) || bUsd === 0) return null;
-    return aUsd / bUsd;
+    const aPerUsd = Number(A?.usdPerUnit);
+    const bPerUsd = Number(B?.usdPerUnit);
+    if (!Number.isFinite(aPerUsd) || !Number.isFinite(bPerUsd) || aPerUsd === 0) return null;
+    return bPerUsd / aPerUsd;
   }
 
   function renderRate() {
@@ -1803,14 +1865,14 @@ function attachForexHandlers(tradePayload) {
 
       <div style="font-size:18px; font-weight:800; margin-bottom:6px;">
         1 ${escapeHtml(A.currencyName || A.countryName)} = ${escapeHtml(fmtFxRate(rate))} ${escapeHtml(
-          B.currencyName || B.countryName
-        )}
+      B.currencyName || B.countryName
+    )}
       </div>
 
       <div class="small" style="opacity:0.9;">
-        USD per 1 unit:
-        <strong>${escapeHtml(A.label)}</strong> = ${escapeHtml(fmtUsdPerUnit(A.usdPerUnit))} •
-        <strong>${escapeHtml(B.label)}</strong> = ${escapeHtml(fmtUsdPerUnit(B.usdPerUnit))}
+        Per $1 USD:
+        <strong>${escapeHtml(A.label)}</strong> = ${escapeHtml(fmtFxAxis(A.usdPerUnit))} •
+        <strong>${escapeHtml(B.label)}</strong> = ${escapeHtml(fmtFxAxis(B.usdPerUnit))}
       </div>
 
       ${
@@ -1837,7 +1899,7 @@ function attachForexHandlers(tradePayload) {
     });
   }
 
-  // Reasonable default: first two currencies if present
+  // default selection
   if (fromSel.options.length > 0 && toSel.options.length > 1) {
     fromSel.selectedIndex = 0;
     toSel.selectedIndex = 1;
@@ -1951,7 +2013,7 @@ function viewPlanetOverview(planet, payload) {
   `;
 }
 
-function viewTrade(planet, overviewPayload, tradePayload) {
+function viewTrade(planet, tradePayload) {
   const items = tradePayload?.trade?.items || [];
   const yTitle = yearTitleFromPayload(tradePayload);
 
@@ -1979,6 +2041,9 @@ function viewTrade(planet, overviewPayload, tradePayload) {
     </section>
   `;
 
+  const forexChartHtml = viewForexChartSection(tradePayload);
+  const fxCalcHtml = viewFxCalculatorSection(tradePayload);
+
   const tablesHtml = `
     <section class="card">
       <h3 class="sectionTitle">${escapeHtml(yTitle)} Trade Overview</h3>
@@ -1993,51 +2058,18 @@ function viewTrade(planet, overviewPayload, tradePayload) {
     </section>
   `;
 
-  const forexHtml = viewForexSection(tradePayload);
-
+  // Required order:
+  // Trade Charts → Foreign Exchange → Exchange Rate Calculator → Trade Overview
   return `
     ${planetHeader(planet, tradePayload)}
-    ${diplomacySectionFromPayload(overviewPayload)}
     ${piesHtml}
+    ${forexChartHtml}
+    ${fxCalcHtml}
     ${tablesHtml}
-    ${forexHtml}
   `;
 }
 
-/**
- * Helper to re-render Trade page without re-fetching.
- * Used for fast forex focus updates.
- */
-function renderTradeView_(tradePayloadCached) {
-  const { path, params } = parseRoute();
-  const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
-  if (!planet) return;
-
-  // We still need overview payload for diplomacy web
-  // If we don't have it cached, fall back to full render() which fetches.
-  const overviewJson = app?.dataset?.tradeOverviewJson;
-  if (!overviewJson) {
-    render();
-    return;
-  }
-
-  let overviewPayload = null;
-  try {
-    overviewPayload = JSON.parse(overviewJson);
-  } catch {
-    render();
-    return;
-  }
-
-  app.innerHTML = viewTrade(planet, overviewPayload, tradePayloadCached);
-
-  attachDiplomacyTooltipHandlers();
-  attachDiplomacyFocusHandlers();
-  attachExpandableTableHandlers();
-
-  document.querySelectorAll(".chartCard").forEach((card) => attachPieTooltipHandlers(card));
-
-  // re-bind pie modal click
+function bindTradePieModalHandlers(tradePayload, planet) {
   document.querySelectorAll(".chartCard[data-chartkey]").forEach((card) => {
     card.addEventListener("click", () => {
       const key = card.getAttribute("data-chartkey");
@@ -2052,9 +2084,9 @@ function renderTradeView_(tradePayloadCached) {
       }
 
       const title = card.querySelector(".chartTitle")?.textContent || "Chart";
-      const subtitle = `${yearTitleFromPayload(tradePayloadCached)} • ${planet.label}`;
+      const subtitle = `${yearTitleFromPayload(tradePayload)} • ${planet.label}`;
 
-      const items = tradePayloadCached?.trade?.items || [];
+      const items = tradePayload?.trade?.items || [];
 
       let metric = null;
       if (key.endsWith(":frequency"))
@@ -2089,9 +2121,6 @@ function renderTradeView_(tradePayloadCached) {
       attachPieTooltipHandlers(modalPie);
     });
   });
-
-  // Forex handlers (focus + calculator)
-  attachForexHandlers(tradePayloadCached);
 }
 
 function viewResources(planet, resPayload) {
@@ -2436,82 +2465,19 @@ async function render() {
     app.innerHTML = viewLoading(`Loading Trade • ${planet.label}`);
 
     try {
-      const [overviewPayload, tradePayload] = await Promise.all([
-        fetchPlanetOverview(planet.id),
-        fetchPlanetTrade(planet.id),
-      ]);
-
-      if (!overviewPayload?.ok) throw new Error(overviewPayload?.error || "Overview ok=false");
+      const tradePayload = await fetchPlanetTrade(planet.id);
       if (!tradePayload?.ok) throw new Error(tradePayload?.error || "Trade ok=false");
 
-      // Initialize forex focus storage
       if (!app.dataset.fxFocus) app.dataset.fxFocus = "";
+      app.dataset.tradePayloadJson = JSON.stringify(tradePayload);
 
-      // Cache overview in dataset so forex focus can re-render without re-fetching
-      app.dataset.tradeOverviewJson = JSON.stringify(overviewPayload);
+      app.innerHTML = viewTrade(planet, tradePayload);
 
-      app.innerHTML = viewTrade(planet, overviewPayload, tradePayload);
-
-      attachDiplomacyTooltipHandlers();
-      attachDiplomacyFocusHandlers();
       attachExpandableTableHandlers();
-
       document.querySelectorAll(".chartCard").forEach((card) => attachPieTooltipHandlers(card));
+      bindTradePieModalHandlers(tradePayload, planet);
 
-      document.querySelectorAll(".chartCard[data-chartkey]").forEach((card) => {
-        card.addEventListener("click", () => {
-          const key = card.getAttribute("data-chartkey");
-          if (!key) return;
-
-          const overlay = document.getElementById("pieModalOverlay");
-          const alreadyOpen = overlay && overlay.classList.contains("show");
-          const currentKey = overlay?.getAttribute("data-key");
-          if (alreadyOpen && currentKey === key) {
-            hideModal();
-            return;
-          }
-
-          const title = card.querySelector(".chartTitle")?.textContent || "Chart";
-          const subtitle = `${yearTitleFromPayload(tradePayload)} • ${planet.label}`;
-
-          const items = tradePayload?.trade?.items || [];
-
-          let metric = null;
-          if (key.endsWith(":frequency"))
-            metric = { k: "frequency", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
-          if (key.endsWith(":volume"))
-            metric = { k: "volume", fmt: (v) => fmtNum(v, 0), absSize: false, absDisp: false };
-          if (key.endsWith(":exports"))
-            metric = { k: "exportValue", fmt: (v) => fmtUsdB(v), absSize: false, absDisp: false };
-          if (key.endsWith(":imports"))
-            metric = { k: "importValue", fmt: (v) => fmtUsdB(v), absSize: true, absDisp: true };
-          if (!metric) return;
-
-          const pieData = buildTradePieData(items, metric.k, metric.fmt, metric.absSize, metric.absDisp);
-
-          const pieLarge = pieSvgHtml({
-            data: pieData.data,
-            total: pieData.total,
-            size: "large",
-            ariaLabel: `${title} enlarged`,
-          });
-
-          const legendHtml = `
-            <div class="legendCard">
-              <h4 class="legendTitle">All countries</h4>
-              ${legendTableHtml(pieData.data)}
-            </div>
-          `;
-
-          showModal({ key, title, subtitle, pieHtml: pieLarge, legendHtml });
-
-          const modalPie = document.getElementById("pieModalPie");
-          attachPieTooltipHandlers(modalPie);
-        });
-      });
-
-      // Forex (focus + calculator)
-      attachForexHandlers(tradePayload);
+      attachForexHandlers(tradePayload, planet);
     } catch (err) {
       console.error(err);
       app.innerHTML = viewError(err);
