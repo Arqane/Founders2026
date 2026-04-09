@@ -1099,19 +1099,28 @@ function buildTrendSvg({
   width = 940,
   height = 360,
 }) {
-  const padL = 54;
-  const padR = 16;
-  const padT = 18;
-  const padB = 42;
-
   const W = width;
   const H = height;
 
   const yearsCount = Array.isArray(years) ? years.length : 0;
   if (yearsCount < 2) return `<div class="small">Not enough years to chart.</div>`;
 
+  // Compute min/max first (needed for dynamic left padding)
   const { min, max, hasData } = computeMinMaxFromSeriesMap(seriesMap, countries, yearsCount);
   if (!hasData) return `<div class="small">No data yet for this indicator.</div>`;
+
+  // --- Dynamic left padding so Y-axis labels never get clipped ---
+  const gridLabelLens = [];
+  for (let g = 0; g <= 4; g++) {
+    const t = g / 4;
+    const val = min + t * (max - min);
+    gridLabelLens.push(fmtNum(val, 1).length);
+  }
+  const maxLabelLen = Math.max(...gridLabelLens, 4);
+  const padL = Math.min(140, Math.max(54, 18 + maxLabelLen * 7));
+  const padR = 16;
+  const padT = 18;
+  const padB = 42;
 
   const x0 = padL;
   const x1 = W - padR;
@@ -1120,8 +1129,8 @@ function buildTrendSvg({
 
   const xForIdx = (i) => x0 + (i * (x1 - x0)) / (yearsCount - 1);
   const yForVal = (v) => {
-    const t = (v - min) / (max - min);
-    return y0 - t * (y0 - y1);
+    const tt = (v - min) / (max - min);
+    return y0 - tt * (y0 - y1);
   };
 
   // gridlines: 4 horizontal
@@ -1185,7 +1194,7 @@ function buildTrendSvg({
   const yLabels = gridLines
     .map((g) => {
       return `
-        <text x="${padL - 10}" y="${g.y.toFixed(2)}" text-anchor="end" dominant-baseline="middle"
+        <text x="${padL - 12}" y="${g.y.toFixed(2)}" text-anchor="end" dominant-baseline="middle"
               font-size="12" fill="rgba(255,255,255,0.75)">
           ${escapeHtml(fmtNum(g.val, 1))}
         </text>`;
@@ -1216,7 +1225,7 @@ function buildTrendSvg({
     })
     .join("");
 
-  // Legend list (left side): keep black text; reduce font size back to the old feel
+  // Legend list (left side): black text; smaller font like original "below-chart" chips
   const legendItems = countries
     .map((c, i) => {
       const color = trendColorForIndex(i, countries.length);
@@ -1259,7 +1268,7 @@ function buildTrendSvg({
           </div>
         </div>
 
-        <!-- RIGHT: chart (BLACK background again) -->
+        <!-- RIGHT: chart (BLACK background) -->
         <div style="flex:1; overflow:auto;">
           <svg class="trendSvg" data-ind="${escapeHtml(indicatorKey)}"
                width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"
@@ -1467,7 +1476,7 @@ function attachResourcesHandlers(resPayload) {
 }
 
 /* =========================================================
-   Views (pages)
+   Views
 ========================================================= */
 
 function viewChoosePlanetSkeleton() {
@@ -1928,90 +1937,4 @@ async function render() {
 
           const legendHtml = `
             <div class="legendCard">
-              <h4 class="legendTitle">All countries</h4>
-              ${legendTableHtml(pieData.data)}
-            </div>
-          `;
-
-          showModal({ key, title, subtitle, pieHtml: pieLarge, legendHtml });
-
-          const modalPie = document.getElementById("pieModalPie");
-          attachPieTooltipHandlers(modalPie);
-        });
-      });
-    } catch (err) {
-      console.error(err);
-      app.innerHTML = viewError(err);
-    }
-    return;
-  }
-
-  if (path === "/resources") {
-    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
-    setNav(planet, "resources");
-    app.innerHTML = viewLoading(`Loading Resources • ${planet.label}`);
-    try {
-      const resPayload = await fetchPlanetResources(planet.id);
-      if (!resPayload?.ok) throw new Error(resPayload?.error || "Resources ok=false");
-
-      app.innerHTML = viewResources(planet, resPayload);
-      attachResourcesHandlers(resPayload);
-    } catch (err) {
-      console.error(err);
-      app.innerHTML = viewError(err);
-    }
-    return;
-  }
-
-  if (path === "/countries") {
-    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
-    setNav(planet, "countries");
-    app.innerHTML = viewLoading(`Loading Countries • ${planet.label}`);
-    try {
-      const payload = await fetchPlanetOverview(planet.id);
-      if (!payload?.ok) throw new Error(payload?.error || "API returned ok=false");
-
-      app.innerHTML = viewCountriesList(planet, payload);
-    } catch (err) {
-      console.error(err);
-      app.innerHTML = viewError(err);
-    }
-    return;
-  }
-
-  if (path === "/country") {
-    const planet = findPlanet(params.get("planet")) || getDefaultPlanet();
-    const countryKey = params.get("country");
-
-    setNav(planet, "countries");
-    app.innerHTML = viewLoading(`Loading Country • ${planet.label}`);
-
-    try {
-      const [overviewPayload, tradePayload, resourcesPayload] = await Promise.all([
-        fetchPlanetOverview(planet.id),
-        fetchPlanetTrade(planet.id),
-        fetchPlanetResources(planet.id),
-      ]);
-
-      if (!overviewPayload?.ok) throw new Error(overviewPayload?.error || "Overview ok=false");
-      if (!tradePayload?.ok) throw new Error(tradePayload?.error || "Trade ok=false");
-      if (!resourcesPayload?.ok) throw new Error(resourcesPayload?.error || "Resources ok=false");
-
-      const country = findCountryInPayload(overviewPayload, countryKey);
-      if (!country) throw new Error(`Country not found: ${countryKey || "unknown"}`);
-
-      app.innerHTML = viewCountryProfile(planet, overviewPayload, tradePayload, resourcesPayload, country);
-      document.querySelectorAll(".chartPieBox").forEach((el) => attachPieTooltipHandlers(el));
-    } catch (err) {
-      console.error(err);
-      app.innerHTML = viewError(err);
-    }
-    return;
-  }
-
-  setNav(null);
-  app.innerHTML = viewChoosePlanetSkeleton();
-}
-
-window.addEventListener("hashchange", () => render());
-render();
+              <h4 class="legendTitle">
